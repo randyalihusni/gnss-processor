@@ -781,7 +781,18 @@ def upload_chunk():
         return jsonify({'received': received, 'total': total_chunks, 'done': False})
 
     # Semua chunk diterima — gabungkan
-    state = _chunk_uploads[upload_id]
+    # Baca state dari filesystem (aman untuk multi-thread/worker)
+    import json as _json
+    meta_path = os.path.join(chunk_dir, '_meta.json')
+    if os.path.exists(meta_path):
+        with open(meta_path) as mf:
+            state = _json.load(mf)
+    else:
+        state = {'filename': filename, 'total_chunks': total_chunks,
+                 'file_type': file_type, 'token': token}
+    # Update memory dict jika ada (opsional, untuk backward compat)
+    if upload_id in _chunk_uploads:
+        del _chunk_uploads[upload_id]
     if file_type == 'rover':
         dest_token = str(__import__('uuid').uuid4())[:8]
         dest_dir   = os.path.join(app.config['UPLOAD_FOLDER'], f'pre_{dest_token}')
