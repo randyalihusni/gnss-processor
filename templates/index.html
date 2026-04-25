@@ -529,13 +529,15 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
           <!-- Multi OBS upload -->
           <div class="fg">
             <div class="flbl">Rover RINEX OBS <span class="req">required</span></div>
-            <div class="multi-dz" id="multi-dz">
-              <input type="file" id="obs-input" multiple
-                accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o">
+            <label for="obs-input" class="multi-dz" id="multi-dz" style="cursor:pointer">
               <div class="multi-dz-icon">📡</div>
-              <div class="multi-dz-title">Drop file OBS di sini</div>
-              <div class="multi-dz-sub">Satu file = satu titik · Upload banyak sekaligus untuk batch</div>
-            </div>
+              <div class="multi-dz-title">Klik untuk pilih file OBS</div>
+              <div class="multi-dz-sub">Satu file = satu titik · Pilih banyak sekaligus untuk batch</div>
+            </label>
+            <input type="file" id="obs-input" multiple
+              accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o"
+              onchange="handleObsChange(this)"
+              style="display:none">
             <div class="file-list" id="file-list"></div>
           </div>
 
@@ -1104,14 +1106,14 @@ const multiDz   = document.getElementById('multi-dz');
 const obsInput  = document.getElementById('obs-input');
 
 function setFiles(files) {
+  console.log('[setFiles] called, files:', files.length);
   obsFiles = Array.from(files);
   fileTokens.length = 0;
   allUploaded = false;
   document.getElementById('nbFiles').textContent = obsFiles.length;
-  // Render dulu dengan status uploading
   renderFileList(obsFiles.map(f => ({ name: f.name, status: 'uploading', progress: 0 })));
   updateProcessBtn();
-  // Upload semua file ke server segera
+  console.log('[setFiles] starting uploadAllRovers');
   uploadAllRovers();
 }
 
@@ -1208,7 +1210,18 @@ function updateProcessBtn() {
   }
 }
 
-obsInput.addEventListener('change', () => setFiles(obsInput.files));
+obsInput.addEventListener('change', function() {
+  console.log('[obsInput change] files:', obsInput.files.length);
+  setFiles(obsInput.files);
+});
+
+// Fungsi onchange langsung di HTML — fallback jika addEventListener tidak jalan
+function handleObsChange(input) {
+  console.log('[handleObsChange] files:', input.files.length);
+  if (input.files.length > 0) {
+    setFiles(input.files);
+  }
+}
 multiDz.addEventListener('dragover',  e => { e.preventDefault(); multiDz.classList.add('ov'); });
 multiDz.addEventListener('dragleave', () => multiDz.classList.remove('ov'));
 multiDz.addEventListener('drop', e => {
@@ -1382,6 +1395,15 @@ function renderFileList(items) {
 }
 
 // ── Single file drop zones (base, nav, sp3) ─────────────────────────────────
+function handleBaseChange(input) {
+  if (!input.files[0]) return;
+  var file = input.files[0];
+  document.getElementById('fn-base').textContent = file.name;
+  document.getElementById('dz-base').classList.add('has-file');
+  document.getElementById('dzico-base').textContent = '✓';
+  uploadBase(file);
+}
+
 ['base','nav','sp3'].forEach(function(n) {
   var dz  = document.getElementById('dz-'+n);
   var inp = document.getElementById('f-'+n);
