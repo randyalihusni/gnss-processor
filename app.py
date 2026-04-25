@@ -163,10 +163,22 @@ def run_processing(job_id, rover, base, nav, sp3, params):
     build_conf(params, conf_path)
     job['conf'] = conf_path
 
+    # Download IGS nav jika belum ada
+    if not nav or not os.path.exists(str(nav)):
+        try:
+            from igs_downloader import download_ephemeris
+            eph_dir = os.path.join(result_dir, 'eph')
+            eph = download_ephemeris(rover, eph_dir, 'broadcast', timeout_total=60)
+            if eph.success and eph.nav_file:
+                nav = eph.nav_file
+                job['nav'] = os.path.basename(nav)
+        except Exception as e:
+            job['stderr'] = (job.get('stderr') or '') + f' [IGS error: {e}]'
+
     # Build command
     cmd = ['rnx2rtkp', '-k', conf_path, '-o', result_pos, rover]
     if base and os.path.exists(base): cmd.append(base)
-    cmd.append(nav)
+    if nav and os.path.exists(str(nav)): cmd.append(nav)
     if sp3 and os.path.exists(sp3): cmd.append(sp3)
 
     try:
@@ -727,12 +739,13 @@ _chunk_uploads = {}
 
 @app.route('/upload/chunk', methods=['POST'])
 def upload_chunk():
-    """Terima satu chunk dari file besar. Dipanggil berulang dari JS."""
+    """Terima satu chunk dari file besar. Dipanggil berulang dari JS.
+    State disimpan di filesystem agar aman dengan multi-worker gunicorn."""
     upload_id    = request.form.get('upload_id', '')
     chunk_index  = int(request.form.get('chunk_index', 0))
     total_chunks = int(request.form.get('total_chunks', 1))
     filename     = request.form.get('filename', 'file.obs')
-    file_type    = request.form.get('file_type', 'rover')  # 'rover' atau 'base'
+    file_type    = request.form.get('file_type', 'rover')
     token        = request.form.get('token', '')
 
     chunk = request.files.get('chunk')
@@ -743,23 +756,25 @@ def upload_chunk():
     chunk_dir = os.path.join(app.config['UPLOAD_FOLDER'], f'chunks_{upload_id}')
     os.makedirs(chunk_dir, exist_ok=True)
 
-    # Simpan chunk
+    # Simpan metadata ke file (bukan memory — aman untuk multi-worker)
+    meta_path = os.path.join(chunk_dir, '_meta.json')
+    if not os.path.exists(meta_path):
+        import json as _json
+        with open(meta_path, 'w') as mf:
+            _json.dump({
+                'filename':     filename,
+                'total_chunks': total_chunks,
+                'file_type':    file_type,
+                'token':        token,
+            }, mf)
+
+    # Simpan chunk ke file
     chunk_path = os.path.join(chunk_dir, f'chunk_{chunk_index:05d}')
     chunk.save(chunk_path)
 
-    # Track state
-    if upload_id not in _chunk_uploads:
-        _chunk_uploads[upload_id] = {
-            'filename':     filename,
-            'total_chunks': total_chunks,
-            'received':     set(),
-            'file_type':    file_type,
-            'token':        token,
-            'chunk_dir':    chunk_dir,
-        }
-    _chunk_uploads[upload_id]['received'].add(chunk_index)
-
-    received = len(_chunk_uploads[upload_id]['received'])
+    # Hitung received dari filesystem (bukan memory)
+    received = len([f for f in os.listdir(chunk_dir)
+                    if f.startswith('chunk_') and not f.endswith('.tmp')])
 
     # Belum semua chunk diterima
     if received < total_chunks:
