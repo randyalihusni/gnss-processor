@@ -1,0 +1,2278 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GNSS Post-processing</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1117; --surf:#161b22; --surf2:#1c2333; --surf3:#21262d;
+  --border:#30363d; --border2:#21262d;
+  --text:#e6edf3; --text2:#8b949e; --text3:#484f58;
+  --accent:#6366f1; --accent-l:#818cf8; --accent-d:rgba(99,102,241,.12);
+  --success:#3fb950; --success-d:rgba(63,185,80,.1);
+  --warn:#d29922; --warn-d:rgba(210,153,34,.1);
+  --error:#f85149; --error-d:rgba(248,81,73,.1);
+  --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+/* ── Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{width:220px;flex-shrink:0;background:var(--surf);border-right:1px solid var(--border2);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-logo{padding:20px 18px 16px;border-bottom:1px solid var(--border2)}
+.logo-mark{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.logo-icon{width:28px;height:28px;border:1px solid var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo-name{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
+.logo-sub{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.5px;margin-left:38px}
+.sidebar-nav{flex:1;padding:12px 8px;overflow-y:auto}
+.nav-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;padding:8px 10px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--text2);font-size:12px;font-weight:500;transition:all .15s;position:relative;user-select:none}
+.nav-item:hover{background:var(--surf3);color:var(--text)}
+.nav-item.active{background:var(--accent-d);color:var(--accent-l)}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:2px;height:16px;background:var(--accent);border-radius:1px}
+.nav-item .nav-icon{width:16px;height:16px;opacity:.6;flex-shrink:0}
+.nav-item.active .nav-icon{opacity:1}
+.nav-badge{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--surf3);border:1px solid var(--border);color:var(--text3);padding:1px 6px;border-radius:10px}
+.nav-item.active .nav-badge{background:var(--accent-d);border-color:rgba(99,102,241,.3);color:var(--accent-l)}
+.sidebar-status{padding:12px 16px;border-top:1px solid var(--border2)}
+.status-row{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text3)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 6px var(--success);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+.status-dot.proc{background:var(--accent-l);box-shadow:0 0 6px var(--accent-l)}
+.status-dot.idle{background:var(--text3);box-shadow:none;animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.topbar{height:48px;border-bottom:1px solid var(--border2);display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;background:var(--surf)}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3)}
+.breadcrumb .sep{opacity:.4}
+.breadcrumb .current{color:var(--text);font-weight:500}
+.topbar-sub{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text3)}
+.content{flex:1;overflow-y:auto;padding:20px}
+
+/* ── Pages ── */
+.page{display:none}.page.active{display:block}
+
+/* ── Card ── */
+.card{background:var(--surf);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
+.card-header{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border2);background:var(--surf2)}
+.card-num{font-family:var(--mono);font-size:9px;color:var(--accent-l);background:var(--accent-d);border:1px solid rgba(99,102,241,.25);padding:2px 7px;border-radius:4px;letter-spacing:.5px;flex-shrink:0}
+.card-title{font-size:12px;font-weight:600;color:var(--text);letter-spacing:.2px}
+.card-body{padding:18px}
+
+/* ── Form elements ── */
+.fg{margin-bottom:14px}
+.flbl{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.req{font-size:9px;color:var(--accent-l);background:var(--accent-d);padding:1px 5px;border-radius:3px}
+.opt{font-size:10px;color:var(--text3)}
+.tip{font-size:10px;color:var(--text3);margin-top:5px;line-height:1.5}
+
+select,.ti{width:100%;background:var(--surf2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 11px;font-family:var(--sans);font-size:12px;outline:none;transition:border-color .15s}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer;appearance:none}
+select:focus,.ti:focus{border-color:var(--accent)}
+.ti::placeholder{color:var(--text3)}
+.ti[type=number]{-moz-appearance:textfield}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.srow{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:var(--border);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:var(--accent-l);border-radius:50%;cursor:pointer;border:2px solid var(--bg)}
+.sv{color:var(--accent-l);min-width:44px;text-align:right;font-weight:500;font-family:var(--mono);font-size:12px}
+
+/* Checkbox grid */
+.ckgr{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cki{display:flex;align-items:center;gap:7px;cursor:pointer;padding:7px 9px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;transition:border-color .15s}
+.cki:hover{border-color:var(--accent)}
+.cki input{accent-color:var(--accent-l);width:12px;height:12px;cursor:pointer}
+.ckl{font-size:11px;color:var(--text)}
+
+/* Tab nav */
+.tabnav{display:flex;gap:2px;border-bottom:1px solid var(--border2);margin-bottom:16px}
+.tbtn{background:transparent;border:none;border-bottom:2px solid transparent;padding:7px 12px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;transition:all .15s;margin-bottom:-1px}
+.tbtn:hover{color:var(--text)}
+.tbtn.on{color:var(--accent-l);border-bottom-color:var(--accent)}
+.tpane{display:none}.tpane.on{display:block}
+
+/* Notice */
+.notice{background:var(--surf2);border:1px solid var(--border2);border-radius:6px;padding:9px 12px;font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5}
+.notice.warn{background:var(--warn-d);border-color:rgba(210,153,34,.25);color:var(--warn)}
+.notice.info{background:var(--accent-d);border-color:rgba(99,102,241,.2);color:var(--accent-l)}
+
+hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
+
+/* Section label */
+.sec-lbl{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border2)}
+
+/* Button */
+.btn-primary{width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-primary:hover{background:var(--accent-l);box-shadow:0 0 20px rgba(99,102,241,.3)}
+.btn-primary:disabled{background:var(--surf3);color:var(--text3);cursor:not-allowed;box-shadow:none}
+.spn{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;display:none;flex-shrink:0}
+@keyframes sp{to{transform:rotate(360deg)}}
+.prog{height:2px;background:var(--border2);border-radius:1px;overflow:hidden;display:none;margin-top:8px}
+.progf{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-l));width:0%;transition:width .3s}
+
+/* ── File upload zones ── */
+.dz{display:flex;align-items:center;gap:12px;border:1px dashed var(--border);border-radius:6px;padding:12px 14px;cursor:pointer;transition:all .2s;position:relative;background:var(--surf2)}
+.dz:hover,.dz.ov{border-color:var(--accent);background:rgba(99,102,241,.05)}
+.dz.has-file{border-color:var(--success);border-style:solid;background:var(--success-d)}
+.dz input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-size:20px;flex-shrink:0}
+.dz-info{flex:1;min-width:0}
+.dz-label{font-size:11px;color:var(--text2);margin-bottom:2px}
+.dz-filename{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dz-badge{font-family:var(--mono);font-size:9px;background:var(--surf3);border:1px solid var(--border);color:var(--text3);padding:2px 7px;border-radius:4px;flex-shrink:0}
+
+/* ── Multi-file upload (Processing) ── */
+.multi-dz{border:2px dashed var(--border);border-radius:8px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;position:relative;background:var(--surf2);margin-bottom:12px}
+.multi-dz:hover,.multi-dz.ov{border-color:var(--accent);background:rgba(99,102,241,.05)}
+.multi-dz input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.multi-dz-icon{font-size:26px;margin-bottom:8px}
+.multi-dz-title{font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px}
+.multi-dz-sub{font-size:11px;color:var(--text3)}
+
+/* File list */
+.file-list{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.file-item{display:flex;align-items:center;gap:8px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:8px 12px;transition:border-color .15s}
+.file-item.st-done{border-color:rgba(63,185,80,.35)}
+.file-item.st-demo{border-color:rgba(210,153,34,.35)}
+.file-item.st-error{border-color:rgba(248,81,73,.35)}
+.file-item.st-processing,.file-item.st-downloading{border-color:rgba(99,102,241,.35)}
+.fi-idx{font-family:var(--mono);font-size:10px;color:var(--text3);width:20px;flex-shrink:0;text-align:right}
+.fi-name{flex:1;font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fi-bar{width:50px;height:3px;background:var(--surf3);border-radius:2px;overflow:hidden;flex-shrink:0}
+.fi-fill{height:100%;border-radius:2px;transition:width .3s}
+.fi-status{font-family:var(--mono);font-size:10px;min-width:75px;text-align:right;flex-shrink:0}
+.fi-remove{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;transition:color .15s;flex-shrink:0}
+.fi-remove:hover{color:var(--error)}
+
+/* Ephemeris selector */
+.eph-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.eph-opt{border:1px solid var(--border);border-radius:6px;padding:10px 12px;cursor:pointer;transition:all .15s;background:var(--surf2)}
+.eph-opt:hover{border-color:var(--accent)}
+.eph-opt.on{border-color:var(--accent);background:var(--accent-d)}
+.eph-opt-title{font-size:11px;font-weight:600;color:var(--text);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.eph-opt-sub{font-size:10px;color:var(--text3);line-height:1.4}
+.eph-upload-area{display:none;margin-top:10px}
+.eph-upload-area.show{display:block}
+
+/* Progress overall */
+.batch-prog-wrap{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;display:none}
+.batch-prog-title{font-size:12px;font-weight:500;color:var(--text);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.batch-overall-bar{height:5px;background:var(--surf3);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.batch-overall-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-l));border-radius:3px;transition:width .5s}
+.batch-stat-row{display:flex;gap:16px;font-family:var(--mono);font-size:10px;color:var(--text3)}
+.batch-stat-row b{color:var(--text)}
+
+/* ── Results ── */
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.stat-box{background:var(--surf2);border:1px solid var(--border);border-radius:7px;padding:14px;text-align:center}
+.stat-lbl{font-size:10px;color:var(--text3);margin-bottom:4px;letter-spacing:.3px}
+.stat-val{font-family:var(--mono);font-size:18px;font-weight:600;color:var(--text)}
+.stat-val.sm{font-size:13px}
+.stat-unit{font-size:10px;color:var(--text3);margin-top:2px}
+.mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+.mini-box{background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px}
+.mini-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.5px;margin-bottom:3px}
+.mini-val{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--text)}
+.mini-val.g{color:var(--success)}.mini-val.w{color:var(--warn)}.mini-val.r{color:var(--error)}
+.prec-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.prec-lbl{font-family:var(--mono);font-size:10px;color:var(--text3);width:28px;text-align:right}
+.prec-bar{flex:1;height:4px;background:var(--border2);border-radius:2px;overflow:hidden}
+.prec-fill{height:100%;border-radius:2px;transition:width .8s ease}
+.prec-val{font-family:var(--mono);font-size:10px;color:var(--text2);min-width:72px;text-align:right}
+.logbox{background:var(--surf2);border:1px solid var(--border2);border-radius:6px;padding:12px;font-family:var(--mono);font-size:10px;color:var(--text3);max-height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+.psumm{font-family:var(--mono);font-size:9px;color:var(--text3);background:var(--surf2);border:1px solid var(--border2);border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:2}
+.psumm span{color:var(--text2)}
+.demo-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;color:var(--warn);background:var(--warn-d);border:1px solid rgba(210,153,34,.3);padding:4px 10px;border-radius:4px;margin-bottom:12px}
+.errbox{background:var(--error-d);border:1px solid rgba(248,81,73,.3);border-radius:6px;padding:12px;font-size:11px;color:var(--error);line-height:1.5;display:none;margin-bottom:12px}
+.dl-row{display:flex;gap:8px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--border2);margin-top:14px}
+.dl-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--surf2);border:1px solid var(--border);border-radius:6px;color:var(--text2);font-size:11px;font-weight:500;text-decoration:none;cursor:pointer;transition:all .15s}
+.dl-btn:hover{border-color:var(--accent-l);color:var(--accent-l)}
+.dl-btn.accent{border-color:rgba(99,102,241,.4);color:var(--accent-l);background:var(--accent-d)}
+.dl-btn.accent:hover{background:rgba(99,102,241,.2)}
+
+/* Result sub-tabs */
+.res-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);margin-bottom:16px}
+.res-tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:7px 12px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;transition:all .15s;margin-bottom:-1px}
+.res-tab:hover{color:var(--text)}
+.res-tab.on{color:var(--accent-l);border-bottom-color:var(--accent)}
+.res-pane{display:none}.res-pane.on{display:block}
+
+/* Solution detail */
+.sol-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.sol-box{background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px 12px}
+.sol-lbl{font-size:9px;color:var(--text3);letter-spacing:.5px;margin-bottom:3px;text-transform:uppercase;font-family:var(--mono)}
+.sol-val{font-family:var(--mono);font-size:14px;color:var(--text);font-weight:500}
+.sol-val.g{color:var(--success)}.sol-val.w{color:var(--warn)}.sol-val.r{color:var(--error)}
+.sol-unit{font-size:10px;color:var(--text3);margin-top:2px}
+.q-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.q-bar-lbl{font-family:var(--mono);font-size:10px;color:var(--text3);width:70px;text-align:right;flex-shrink:0}
+.q-bar-bg{flex:1;height:7px;background:var(--surf3);border-radius:4px;overflow:hidden}
+.q-bar-fill{height:100%;border-radius:4px;transition:width .8s ease}
+.q-bar-val{font-family:var(--mono);font-size:10px;color:var(--text2);min-width:90px;text-align:right}
+
+/* CRS */
+.crs-list{display:flex;flex-direction:column;gap:8px}
+.crs-card{background:var(--surf2);border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.crs-card.hi{border-color:rgba(99,102,241,.4);box-shadow:0 0 0 1px rgba(99,102,241,.12)}
+.crs-header{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--surf3);border-bottom:1px solid var(--border2)}
+.crs-epsg{font-family:var(--mono);font-size:9px;color:var(--text3);background:var(--surf2);border:1px solid var(--border);padding:2px 7px;border-radius:3px;flex-shrink:0}
+.crs-epsg.on{background:var(--accent-d);border-color:rgba(99,102,241,.3);color:var(--accent-l)}
+.crs-name{font-size:12px;font-weight:500;color:var(--text);flex:1}
+.crs-unit{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.crs-body{padding:10px 14px}
+.crs-coords{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:7px}
+.crs-coord{background:var(--surf3);border-radius:5px;padding:8px 10px}
+.crs-coord-lbl{font-size:9px;color:var(--text3);margin-bottom:2px;text-transform:uppercase;letter-spacing:.4px}
+.crs-coord-val{font-family:var(--mono);font-size:11px;color:var(--text);font-weight:500;word-break:break-all}
+.crs-extra{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:7px}
+.crs-ei{display:flex;gap:5px;font-family:var(--mono);font-size:10px}
+.crs-el{color:var(--text3)}.crs-ev{color:var(--text2)}
+.crs-note{font-size:10px;color:var(--text3);line-height:1.5;border-top:1px solid var(--border2);padding-top:6px}
+.crs-copy{margin-left:auto;font-family:var(--mono);font-size:9px;background:transparent;border:1px solid var(--border);color:var(--text3);border-radius:4px;padding:2px 7px;cursor:pointer;transition:all .15s}
+.crs-copy:hover{border-color:var(--accent-l);color:var(--accent-l)}
+.crs-filter{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.crs-fbtn{font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);color:var(--text3);border-radius:4px;padding:3px 9px;cursor:pointer;transition:all .15s}
+.crs-fbtn:hover{border-color:var(--accent-l);color:var(--accent-l)}
+.crs-fbtn.on{background:var(--accent-d);border-color:rgba(99,102,241,.4);color:var(--accent-l)}
+
+/* LC cards */
+.lc-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.lc-card{background:var(--surf2);border:1px solid var(--border);border-radius:7px;padding:12px}
+.lc-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.lc-name{font-family:var(--mono);font-size:11px;font-weight:600}
+.lc-lam{font-family:var(--mono);font-size:10px;color:var(--text3);background:var(--surf3);border-radius:3px;padding:2px 7px}
+.lc-formula{font-family:var(--mono);font-size:9px;color:var(--text3);border-left:2px solid var(--border);padding-left:7px;margin-bottom:7px}
+.lc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:7px}
+.lc-m{text-align:center}
+.lc-ml{font-size:9px;color:var(--text3);margin-bottom:2px}
+.lc-mv{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text)}
+.lc-rbar{margin:5px 0}
+.lc-rbg{width:100%;height:3px;background:var(--surf3);border-radius:2px;overflow:hidden}
+.lc-rf{height:100%;border-radius:2px;transition:width .8s}
+.lc-slip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--warn);background:var(--warn-d);border-radius:4px;padding:3px 8px;margin-bottom:5px}
+.lc-use{font-size:10px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border2);padding-top:6px}
+
+/* Job history */
+.job-row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border2);transition:background .15s;cursor:pointer}
+.job-row:hover{background:var(--surf2)}
+.job-id{font-family:var(--mono);font-size:10px;color:var(--accent-l);width:65px;flex-shrink:0}
+.job-pts{font-family:var(--mono);font-size:10px;color:var(--text3);width:55px}
+.jbdg{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;letter-spacing:.5px;text-transform:uppercase}
+.bd{background:rgba(63,185,80,.15);color:var(--success)}
+.bm{background:var(--warn-d);color:var(--warn)}
+.be{background:var(--error-d);color:var(--error)}
+.bp{background:var(--accent-d);color:var(--accent-l)}
+.bq{background:var(--surf3);color:var(--text3)}
+.job-time{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text3)}
+
+/* Download batch */
+.dl-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.dl-card{background:var(--surf2);border:1px solid var(--border);border-radius:7px;padding:14px;text-align:center;cursor:pointer;transition:all .2s;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:5px}
+.dl-card:hover:not(.off){border-color:var(--accent-l);background:var(--surf3)}
+.dl-card.off{opacity:.35;pointer-events:none}
+.dl-icon{font-size:20px}
+.dl-label{font-size:11px;font-weight:500;color:var(--text)}
+.dl-sub{font-size:10px;color:var(--text3)}
+
+/* Section hint */
+.section-hint{font-size:11px;color:var(--text3);background:var(--surf2);border:1px solid var(--border2);border-radius:6px;padding:9px 12px;margin-bottom:14px;line-height:1.5}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Empty state */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;text-align:center}
+.empty-icon{font-size:32px;margin-bottom:12px;opacity:.4}
+.empty-title{font-size:13px;font-weight:500;color:var(--text2);margin-bottom:4px}
+.empty-sub{font-size:11px;color:var(--text3);max-width:240px}
+
+@media(max-width:768px){.sidebar{width:180px}.stat-grid{grid-template-columns:1fr 1fr}.lc-grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* Inline antenna height in file row */
+.fi-ant-wrap { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.fi-ant-lbl  { font-family:var(--mono); font-size:9px; color:var(--text3); white-space:nowrap; }
+.fi-ant-inp  {
+  width:64px; background:var(--surf3); border:1px solid var(--border);
+  border-radius:4px; color:var(--text); padding:3px 6px;
+  font-family:var(--mono); font-size:11px; outline:none;
+  transition:border-color .15s; text-align:right;
+}
+.fi-ant-inp:focus { border-color:var(--accent); }
+.fi-ant-inp::placeholder { color:var(--text3); }
+
+
+/* ── Job Queue ─────────────────────────────────────── */
+.queue-wrap { margin-top: 14px; }
+.queue-item {
+  background: var(--surf2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 12px 14px; margin-bottom: 8px;
+  transition: border-color .15s;
+}
+.queue-item.st-processing, .queue-item.st-downloading,
+.queue-item.st-running, .queue-item.st-generating {
+  border-color: rgba(99,102,241,.4);
+  background: rgba(99,102,241,.04);
+}
+.queue-item.st-done, .queue-item.st-demo {
+  border-color: rgba(63,185,80,.3);
+}
+.queue-item.st-error { border-color: rgba(248,81,73,.3); }
+
+.qi-top { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.qi-id  { font-family:var(--mono); font-size:10px; color:var(--accent-l);
+          background:var(--accent-d); border:1px solid rgba(99,102,241,.25);
+          padding:2px 8px; border-radius:4px; flex-shrink:0; }
+.qi-name { font-size:12px; font-weight:500; color:var(--text); flex:1;
+           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.qi-age  { font-family:var(--mono); font-size:10px; color:var(--text3); flex-shrink:0; }
+.qi-badge { font-family:var(--mono); font-size:9px; padding:2px 8px;
+            border-radius:4px; letter-spacing:.5px; text-transform:uppercase; flex-shrink:0; }
+
+.qi-prog-wrap { margin-bottom:8px; }
+.qi-prog-bar  { height:3px; background:var(--surf3); border-radius:2px; overflow:hidden; margin-bottom:4px; }
+.qi-prog-fill { height:100%; border-radius:2px; transition:width .5s;
+                background:linear-gradient(90deg,var(--accent),var(--accent-l)); }
+.qi-prog-txt  { font-family:var(--mono); font-size:10px; color:var(--text3); }
+
+.qi-pts { display:flex; flex-direction:column; gap:3px; max-height:120px;
+          overflow-y:auto; margin-bottom:8px; }
+.qi-pt  { display:flex; align-items:center; gap:7px; font-family:var(--mono);
+          font-size:10px; padding:3px 6px; background:var(--surf3);
+          border-radius:4px; }
+.qi-pt-name { flex:1; color:var(--text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.qi-pt-stat { flex-shrink:0; }
+
+.qi-actions { display:flex; gap:7px; flex-wrap:wrap; }
+.qi-btn { font-size:11px; font-weight:500; padding:5px 12px;
+          border-radius:5px; border:none; cursor:pointer; transition:all .15s; }
+.qi-btn.primary { background:var(--accent); color:#fff; }
+.qi-btn.primary:hover { background:var(--accent-l); }
+.qi-btn.secondary { background:var(--surf3); color:var(--text2);
+                    border:1px solid var(--border); }
+.qi-btn.secondary:hover { border-color:var(--accent-l); color:var(--accent-l); }
+.qi-btn.danger { background:var(--error-d); color:var(--error);
+                 border:1px solid rgba(248,81,73,.3); }
+
+.qi-error { font-family:var(--mono); font-size:10px; color:var(--error);
+            background:var(--error-d); border-radius:4px; padding:5px 8px;
+            margin-bottom:7px; line-height:1.5; }
+
+.qi-dl-row { display:flex; gap:6px; flex-wrap:wrap; }
+.qi-dl-btn { font-family:var(--mono); font-size:10px; padding:3px 10px;
+             background:var(--surf3); border:1px solid var(--border);
+             color:var(--text3); border-radius:4px; text-decoration:none;
+             transition:all .15s; }
+.qi-dl-btn:hover { border-color:var(--accent-l); color:var(--accent-l); }
+
+.queue-empty { text-align:center; padding:20px; font-size:11px; color:var(--text3); }
+
+
+/* ── Toast notification ─────────────────────────────── */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  background: var(--surf); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 18px;
+  font-size: 12px; color: var(--text);
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  display: flex; align-items: center; gap: 10px;
+  transform: translateY(80px); opacity: 0;
+  transition: all .3s ease;
+  max-width: 320px;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.ok   { border-color: rgba(63,185,80,.4); }
+.toast.err  { border-color: rgba(248,81,73,.4); }
+.toast-icon { font-size: 16px; flex-shrink: 0; }
+.toast-msg  { flex: 1; line-height: 1.4; }
+
+/* ── Upload progress ────────────────────────────────── */
+.upload-prog-wrap {
+  margin-top: 10px; display: none;
+  background: var(--surf2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px;
+}
+.upload-prog-label {
+  font-size: 11px; color: var(--text2); margin-bottom: 6px;
+  display: flex; justify-content: space-between;
+}
+.upload-prog-bar  { height: 4px; background: var(--surf3); border-radius: 2px; overflow: hidden; }
+.upload-prog-fill { height: 100%; background: linear-gradient(90deg,var(--accent),var(--accent-l));
+                    border-radius: 2px; width: 0%; transition: width .2s; }
+
+
+/* ── Upload progress per file ─────────────────────── */
+.fi-up-bar { width: 60px; height: 4px; background: var(--surf3); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.fi-up-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .2s; }
+.fi-up-pct  { font-family:var(--mono); font-size:10px; color:var(--accent-l); min-width:36px; text-align:right; flex-shrink:0; }
+.fi-up-ok   { font-size:12px; flex-shrink:0; }
+
+/* Base upload progress */
+.base-up-wrap { margin-top:8px; display:none; }
+.base-up-bar  { height:4px; background:var(--surf3); border-radius:2px; overflow:hidden; }
+.base-up-fill { height:100%; border-radius:2px; background:var(--accent-l); transition:width .2s; }
+.base-up-info { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--text3); margin-bottom:4px; }
+
+/* Tombol proses disabled state */
+.btn-primary:disabled { background:var(--surf3); color:var(--text3); cursor:not-allowed; }
+.btn-ready { background: var(--success) !important; }
+.btn-ready:hover { background: #4cbe60 !important; box-shadow: 0 0 20px rgba(63,185,80,.3) !important; }
+
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ── Sidebar ── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon">
+        <svg viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+          <circle cx="7" cy="7" r="2.5" stroke="#818cf8" stroke-width="1.2"/>
+          <circle cx="7" cy="7" r="5.5" stroke="#818cf8" stroke-width=".8" stroke-dasharray="2 1.5" opacity=".5"/>
+          <line x1="7" y1="1" x2="7" y2="3" stroke="#818cf8" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="7" y1="11" x2="7" y2="13" stroke="#818cf8" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="logo-name">GNSS<br>Post-processing</span>
+    </div>
+    <div class="logo-sub">RTKLIB Engine · v3.0</div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+
+    <div class="nav-item active" onclick="showPage('processing',this)" id="navProc">
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="3" rx="1.5" stroke="currentColor" stroke-width="1.3"/><rect x="1" y="6.5" width="14" height="3" rx="1.5" stroke="currentColor" stroke-width="1.3"/><rect x="1" y="11" width="14" height="3" rx="1.5" stroke="currentColor" stroke-width="1.3"/></svg>
+      </span>
+      Processing
+      <span class="nav-badge" id="nbFiles">0</span>
+    </div>
+
+    <div class="nav-item" onclick="showPage('queue',this)" id="navQueue">
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="4" cy="4.5" r="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="4" cy="9" r="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="4" cy="13.5" r="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="8" y1="4.5" x2="15" y2="4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="9" x2="15" y2="9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <line x1="8" y1="13.5" x2="15" y2="13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      Job Queue
+      <span class="nav-badge" id="nbQueue">0</span>
+    </div>
+
+    <div class="nav-item" onclick="showPage('results',this)" id="navResults">
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 12L5.5 8l3.5 2.5L14 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      Results
+      <span class="nav-badge" id="nbResult" style="display:none">●</span>
+    </div>
+
+    <div class="nav-item" onclick="showPage('history',this)">
+      <span class="nav-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 5v3.5l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      </span>
+      History
+      <span class="nav-badge" id="nbHist">0</span>
+    </div>
+  </nav>
+
+  <div class="sidebar-status">
+    <div class="status-row" id="statusRow">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusTxt">System Online</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Main ── -->
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">
+      <span>GNSS Post-processing</span>
+      <span class="sep">/</span>
+      <span class="current" id="pageTitle">Processing</span>
+    </div>
+    <span class="topbar-sub" id="jobIdBadge"></span>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ PAGE: Processing ══ -->
+    <div class="page active" id="page-processing">
+
+      <!-- File Upload -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">01</span>
+          <span class="card-title">Input Files</span>
+        </div>
+        <div class="card-body">
+
+          <!-- Multi OBS upload -->
+          <div class="fg">
+            <div class="flbl">Rover RINEX OBS <span class="req">required</span></div>
+            <div class="multi-dz" id="multi-dz">
+              <input type="file" id="obs-input" multiple
+                accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o">
+              <div class="multi-dz-icon">📡</div>
+              <div class="multi-dz-title">Drop file OBS di sini</div>
+              <div class="multi-dz-sub">Satu file = satu titik · Upload banyak sekaligus untuk batch</div>
+            </div>
+            <div class="file-list" id="file-list"></div>
+          </div>
+
+          <!-- Base OBS -->
+          <div class="fg">
+            <div class="flbl">Base Station OBS <span class="opt">· opsional</span></div>
+            <div class="dz" id="dz-base">
+              <input type="file" id="f-base" accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o">
+              <div class="dz-icon">🏁</div>
+              <div class="dz-info">
+                <div class="dz-label">Base station observation file</div>
+                <div class="dz-filename" id="fn-base">Opsional — untuk baseline Static / Kinematic</div>
+              </div>
+              <span class="dz-badge">BASE</span>
+            </div>
+            <div class="base-up-wrap" id="base-up-wrap">
+              <div class="base-up-info">
+                <span id="base-up-label">Mengupload base...</span>
+                <span id="base-up-pct">0%</span>
+              </div>
+              <div class="base-up-bar"><div class="base-up-fill" id="base-up-fill"></div></div>
+            </div>
+          </div>
+
+          <!-- Base coordinates -->
+          <div class="fg">
+            <div class="flbl">Koordinat Base Station <span class="opt">· opsional, jika diketahui</span></div>
+            <div class="notice" id="base-coord-notice">Isi koordinat base jika diketahui. Jika kosong, RTKLIB pakai koordinat dari header RINEX base.</div>
+            <div class="three" style="margin-bottom:8px">
+              <div>
+                <div class="flbl">Latitude (°)</div>
+                <input class="ti" type="number" id="blat" placeholder="-7.16654321" step="0.00000001" min="-90" max="90" oninput="this.style.borderColor=''" title="Auto dari header RINEX base jika tersedia">
+              </div>
+              <div>
+                <div class="flbl">Longitude (°)</div>
+                <input class="ti" type="number" id="blon" placeholder="112.65087654" step="0.00000001" min="-180" max="180" oninput="this.style.borderColor=''">
+              </div>
+              <div>
+                <div class="flbl">Height (m)</div>
+                <input class="ti" type="number" id="bht" placeholder="12.345" step="0.001" oninput="this.style.borderColor=''">
+              </div>
+            </div>
+          </div>
+
+          <!-- Antenna height base only -->
+          <div class="fg">
+            <div class="flbl">Tinggi Antena Base (m) <span class="opt">· vertikal</span></div>
+            <input class="ti" type="number" id="ant-base" placeholder="0.000" step="0.001" min="0" style="max-width:200px" oninput="this.style.borderColor=''" title="Auto dari header RINEX base jika tersedia">
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Ephemeris -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">02</span>
+          <span class="card-title">Ephemeris</span>
+        </div>
+        <div class="card-body">
+          <div class="fg">
+            <div class="flbl">Sumber Ephemeris</div>
+            <div class="eph-options">
+              <div class="eph-opt on" id="eph-auto" onclick="setEph('auto')">
+                <div class="eph-opt-title">🌐 Auto IGS Download</div>
+                <div class="eph-opt-sub">Download otomatis dari server IGS berdasarkan tanggal OBS</div>
+              </div>
+              <div class="eph-opt" id="eph-manual" onclick="setEph('manual')">
+                <div class="eph-opt-title">📁 Upload Manual</div>
+                <div class="eph-opt-sub">Upload file NAV / SP3 sendiri</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Auto IGS options -->
+          <div id="eph-auto-opts">
+            <div class="fg">
+              <div class="flbl">Tipe Ephemeris IGS</div>
+              <select id="eph-type">
+                <option value="broadcast">Broadcast Nav — cepat, akurasi dm-cm, semua tanggal</option>
+                <option value="precise">Precise SP3 + Clock — akurasi mm, tersedia H+2 hari</option>
+                <option value="both">Keduanya — Broadcast + Precise</option>
+              </select>
+              <div class="tip">IGS Rapid tersedia ~2 hari setelah observasi. IGS Final ~14 hari.</div>
+            </div>
+          </div>
+
+          <!-- Manual upload -->
+          <div class="eph-upload-area" id="eph-manual-opts">
+            <div class="fg">
+              <div class="flbl">Navigation File <span class="req">required</span></div>
+              <div class="dz" id="dz-nav">
+                <input type="file" id="f-nav" accept=".nav,.rnx,.n,.21n,.22n,.23n,.24n,.25n,.26n,.p">
+                <div class="dz-icon">🛰️</div>
+                <div class="dz-info">
+                  <div class="dz-label">Navigation / ephemeris file</div>
+                  <div class="dz-filename" id="fn-nav">Drop file atau klik untuk pilih</div>
+                </div>
+                <span class="dz-badge">NAV</span>
+              </div>
+            </div>
+            <div class="fg">
+              <div class="flbl">SP3 Precise Orbit <span class="opt">· opsional</span></div>
+              <div class="dz" id="dz-sp3">
+                <input type="file" id="f-sp3" accept=".sp3,.SP3">
+                <div class="dz-icon">🌐</div>
+                <div class="dz-info">
+                  <div class="dz-label">Precise satellite orbit (SP3)</div>
+                  <div class="dz-filename" id="fn-sp3">Opsional — untuk PPP</div>
+                </div>
+                <span class="dz-badge">SP3</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Parameters -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">03</span>
+          <span class="card-title">Parameters</span>
+        </div>
+        <div class="card-body">
+          <div class="tabnav">
+            <button class="tbtn on" onclick="tab('tp-basic',this)">Basic</button>
+            <button class="tbtn" onclick="tab('tp-gnss',this)">GNSS Config</button>
+            <button class="tbtn" onclick="tab('tp-corr',this)">Corrections</button>
+          </div>
+
+          <!-- BASIC -->
+          <div class="tpane on" id="tp-basic">
+            <div class="fg">
+              <div class="flbl">Mode Positioning</div>
+              <select id="mode">
+                {% for key, label in modes.items() %}
+                <option value="{{ key }}" {% if key=='static' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Elevation Mask</div>
+              <div class="srow">
+                <input type="range" id="elev" min="5" max="30" value="15" step="1"
+                  oninput="document.getElementById('ev').textContent=this.value+'°'">
+                <span class="sv" id="ev">15°</span>
+              </div>
+            </div>
+            <div class="fg">
+              <div class="flbl">SNR Mask</div>
+              <div class="srow">
+                <input type="range" id="snr" min="0" max="45" value="0" step="1"
+                  oninput="document.getElementById('sn').textContent=this.value==0?'OFF':this.value+' dBHz'">
+                <span class="sv" id="sn">OFF</span>
+              </div>
+            </div>
+            <div class="fg">
+              <div class="flbl">Ambiguity Resolution</div>
+              <select id="ambres">
+                <option value="off">OFF</option>
+                <option value="continuous" selected>Continuous</option>
+                <option value="instantaneous">Instantaneous</option>
+                <option value="fix-and-hold">Fix-and-Hold</option>
+                <option value="ppp-ar">PPP-AR</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Max GDOP</div>
+              <input class="ti" type="number" id="maxgdop" value="30" min="1" step="1">
+            </div>
+          </div>
+
+          <!-- GNSS CONFIG -->
+          <div class="tpane" id="tp-gnss">
+            <div class="fg">
+              <div class="flbl">Frekuensi</div>
+              <select id="freq">
+                <option value="1">L1 Only</option>
+                <option value="2" selected>L1 + L2</option>
+                <option value="3">L1 + L2 + L5</option>
+                <option value="4">L1 + L2 + L5 + L6</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Sistem Satelit</div>
+              <div class="ckgr">
+                <label class="cki"><input type="checkbox" id="sGPS" checked><span class="ckl">GPS</span></label>
+                <label class="cki"><input type="checkbox" id="sGLO" checked><span class="ckl">GLONASS</span></label>
+                <label class="cki"><input type="checkbox" id="sGAL"><span class="ckl">Galileo</span></label>
+                <label class="cki"><input type="checkbox" id="sBDS"><span class="ckl">BeiDou</span></label>
+                <label class="cki"><input type="checkbox" id="sQZS"><span class="ckl">QZSS</span></label>
+                <label class="cki"><input type="checkbox" id="sSBS"><span class="ckl">SBAS</span></label>
+              </div>
+            </div>
+            <div class="fg">
+              <div class="flbl">Filter Solusi</div>
+              <select id="filter">
+                <option value="0">Forward</option>
+                <option value="1">Backward</option>
+                <option value="2" selected>Combined (Forward+Backward)</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Min. Satelit</div>
+              <div class="srow">
+                <input type="range" id="minsat" min="4" max="10" value="4" step="1"
+                  oninput="document.getElementById('ms').textContent=this.value">
+                <span class="sv" id="ms">4</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CORRECTIONS -->
+          <div class="tpane" id="tp-corr">
+            <div class="fg">
+              <div class="flbl">Model Ionosfer</div>
+              <select id="iono">
+                <option value="0">OFF</option>
+                <option value="1">Broadcast (Klobuchar)</option>
+                <option value="2">SBAS</option>
+                <option value="3" selected>Dual-freq IF Combination</option>
+                <option value="4">Estimate TEC</option>
+                <option value="5">IONEX TEC</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Model Troposfer</div>
+              <select id="tropo">
+                <option value="0">OFF</option>
+                <option value="1" selected>Saastamoinen</option>
+                <option value="2">SBAS</option>
+                <option value="3">Estimate ZTD</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Earth Tides</div>
+              <select id="etides">
+                <option value="0" selected>OFF</option>
+                <option value="1">Solid Earth Tides</option>
+                <option value="3">Solid + Ocean Loading</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Phase Windup</div>
+              <select id="windup">
+                <option value="0">OFF</option>
+                <option value="1" selected>ON</option>
+              </select>
+            </div>
+            <div class="fg">
+              <div class="flbl">Cycle Slip Detection</div>
+              <div class="ckgr">
+                <label class="cki"><input type="checkbox" id="csLC" checked><span class="ckl">LC Jump</span></label>
+                <label class="cki"><input type="checkbox" id="csGF" checked><span class="ckl">Geom-Free</span></label>
+                <label class="cki"><input type="checkbox" id="csDOP"><span class="ckl">Doppler</span></label>
+              </div>
+            </div>
+            <div class="fg">
+              <div class="flbl">Max Age Differential (s)</div>
+              <input class="ti" type="number" id="maxage" value="30" min="1" step="1">
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Process button + progress -->
+      <div class="card">
+        <div class="card-body">
+          <button class="btn-primary" id="btngo" onclick="go()">
+            <div class="spn" id="spn"></div>
+            <span id="btntxt">▶ Proses Data</span>
+          </button>
+          <div class="upload-prog-wrap" id="upload-prog-wrap">
+            <div class="upload-prog-label">
+              <span id="upload-prog-label">Mengupload file...</span>
+              <span id="upload-prog-pct">0%</span>
+            </div>
+            <div class="upload-prog-bar">
+              <div class="upload-prog-fill" id="upload-prog-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+
+    </div>
+
+    <!-- ══ PAGE: Job Queue ══ -->
+    <div class="page" id="page-queue">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">Q</span>
+          <span class="card-title">Job Queue</span>
+          <span class="nav-badge" id="queue-badge" style="margin-left:auto">0</span>
+        </div>
+        <div class="card-body" style="padding:12px">
+          <div class="queue-wrap" id="queue-list">
+            <div class="queue-empty">Belum ada job. Proses data untuk memulai.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: Results ══ -->
+    <div class="page" id="page-results">
+      <div id="results-empty" class="card">
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          <div class="empty-title">Belum ada hasil</div>
+          <div class="empty-sub">Jalankan pemrosesan dari halaman Processing untuk melihat hasil di sini.</div>
+        </div>
+      </div>
+
+      <div id="results-content" style="display:none">
+        <div class="errbox" id="errbox"></div>
+
+        <!-- Single point result -->
+        <div class="card" id="rpanel" style="display:none">
+          <div class="card-header">
+            <span class="card-num">R</span>
+            <span class="card-title">Result</span>
+            <span id="rjid" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text3)"></span>
+          </div>
+          <div class="card-body">
+            <div class="demo-badge" id="demobdg" style="display:none">⚠ DEMO MODE — Install RTKLIB untuk data nyata</div>
+            <div class="psumm" id="psumm"></div>
+
+            <div class="res-tabs">
+              <button class="res-tab on" onclick="resTab('rt-coord',this)">Coordinates</button>
+              <button class="res-tab" onclick="resTab('rt-sol',this)">Solution Detail</button>
+              <button class="res-tab" onclick="resTab('rt-crs',this);loadCRS()">CRS Output</button>
+              <button class="res-tab" onclick="resTab('rt-lc',this)">LC / LW</button>
+              <button class="res-tab" onclick="resTab('rt-log',this)">Log</button>
+            </div>
+
+            <!-- Coordinates -->
+            <div class="res-pane on" id="rt-coord">
+              <div class="stat-grid">
+                <div class="stat-box"><div class="stat-lbl">Latitude</div><div class="stat-val sm" id="rlat">—</div><div class="stat-unit">°</div></div>
+                <div class="stat-box"><div class="stat-lbl">Longitude</div><div class="stat-val sm" id="rlon">—</div><div class="stat-unit">°</div></div>
+                <div class="stat-box"><div class="stat-lbl">Height</div><div class="stat-val" id="rht">—</div><div class="stat-unit">m ellips.</div></div>
+              </div>
+              <div class="mini-grid">
+                <div class="mini-box"><div class="mini-lbl">TOTAL EPOCHS</div><div class="mini-val" id="rtot">—</div></div>
+                <div class="mini-box"><div class="mini-lbl">FIXED (Q=1)</div><div class="mini-val g" id="rfix">—</div></div>
+                <div class="mini-box"><div class="mini-lbl">FIX RATIO</div><div class="mini-val" id="rratio">—</div></div>
+                <div class="mini-box"><div class="mini-lbl">MODE</div><div class="mini-val" id="rmode" style="font-size:11px">—</div></div>
+              </div>
+              <div class="card-header" style="margin:0 -18px 14px;border-top:1px solid var(--border2)">
+                <span class="card-num" style="background:var(--accent-d);border-color:rgba(99,102,241,.25);color:var(--accent-l)">σ</span>
+                <span class="card-title" style="font-size:11px">Precision (Std Dev)</span>
+              </div>
+              <div class="prec-row"><div class="prec-lbl">LAT</div><div class="prec-bar"><div class="prec-fill" id="barlat" style="width:0%;background:var(--success)"></div></div><div class="prec-val" id="pvlat">—</div></div>
+              <div class="prec-row"><div class="prec-lbl">LON</div><div class="prec-bar"><div class="prec-fill" id="barlon" style="width:0%;background:var(--accent)"></div></div><div class="prec-val" id="pvlon">—</div></div>
+              <div class="prec-row" style="margin-bottom:0"><div class="prec-lbl">HT</div><div class="prec-bar"><div class="prec-fill" id="barht" style="width:0%;background:var(--warn)"></div></div><div class="prec-val" id="pvht">—</div></div>
+            </div>
+
+            <!-- Solution Detail -->
+            <div class="res-pane" id="rt-sol">
+              <div class="section-hint">Distribusi epoch per tipe solusi, statistik satelit, dan metrik presisi 3D.</div>
+              <div class="card-header" style="margin:0 -18px 12px;border-top:none;padding-top:0">
+                <span class="card-num" style="background:var(--success-d);border-color:rgba(63,185,80,.25);color:var(--success)">Q</span>
+                <span class="card-title" style="font-size:11px">Solution Quality Distribution</span>
+              </div>
+              <div class="q-bar-row"><div class="q-bar-lbl">Fixed (Q=1)</div><div class="q-bar-bg"><div class="q-bar-fill" id="qb1" style="background:var(--success)"></div></div><div class="q-bar-val" id="qv1">—</div></div>
+              <div class="q-bar-row"><div class="q-bar-lbl">Float (Q=2)</div><div class="q-bar-bg"><div class="q-bar-fill" id="qb2" style="background:var(--accent-l)"></div></div><div class="q-bar-val" id="qv2">—</div></div>
+              <div class="q-bar-row"><div class="q-bar-lbl">SBAS (Q=3)</div><div class="q-bar-bg"><div class="q-bar-fill" id="qb3" style="background:#aa44ff"></div></div><div class="q-bar-val" id="qv3">—</div></div>
+              <div class="q-bar-row"><div class="q-bar-lbl">DGPS (Q=4)</div><div class="q-bar-bg"><div class="q-bar-fill" id="qb4" style="background:#ff8800"></div></div><div class="q-bar-val" id="qv4">—</div></div>
+              <div class="q-bar-row" style="margin-bottom:14px"><div class="q-bar-lbl">Single (Q=5)</div><div class="q-bar-bg"><div class="q-bar-fill" id="qb5" style="background:var(--error)"></div></div><div class="q-bar-val" id="qv5">—</div></div>
+              <div class="card-header" style="margin:0 -18px 12px;border-top:1px solid var(--border2)">
+                <span class="card-num" style="background:var(--surf3);color:var(--text3)">3D</span>
+                <span class="card-title" style="font-size:11px">Position Accuracy Metrics</span>
+              </div>
+              <div class="sol-grid">
+                <div class="sol-box"><div class="sol-lbl">CEP (2D)</div><div class="sol-val" id="sol-cep">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">SEP (3D)</div><div class="sol-val" id="sol-sep">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">RMS Horizontal</div><div class="sol-val" id="sol-rmsh">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">RMS Vertical</div><div class="sol-val" id="sol-rmsv">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">RMS 3D</div><div class="sol-val" id="sol-rms3d">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">Amb AR Ratio</div><div class="sol-val" id="sol-ar">—</div><div class="sol-unit">%</div></div>
+              </div>
+              <div class="card-header" style="margin:0 -18px 12px;border-top:1px solid var(--border2)">
+                <span class="card-num" style="background:var(--surf3);color:var(--text3)">SAT</span>
+                <span class="card-title" style="font-size:11px">Satellite & DOP</span>
+              </div>
+              <div class="sol-grid">
+                <div class="sol-box"><div class="sol-lbl">Sat Mean</div><div class="sol-val" id="sol-nsm">—</div></div>
+                <div class="sol-box"><div class="sol-lbl">Sat Min/Max</div><div class="sol-val" id="sol-nsmm">—</div></div>
+                <div class="sol-box"><div class="sol-lbl">PDOP Mean</div><div class="sol-val" id="sol-pdop">—</div></div>
+                <div class="sol-box"><div class="sol-lbl">SDn Mean</div><div class="sol-val" id="sol-sdn">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">SDe Mean</div><div class="sol-val" id="sol-sde">—</div><div class="sol-unit">mm</div></div>
+                <div class="sol-box"><div class="sol-lbl">SDu Mean</div><div class="sol-val" id="sol-sdu">—</div><div class="sol-unit">mm</div></div>
+              </div>
+            </div>
+
+            <!-- CRS -->
+            <div class="res-pane" id="rt-crs">
+              <div class="section-hint">Konversi otomatis ke berbagai sistem koordinat berdasarkan lokasi titik.</div>
+              <div class="crs-filter">
+                <button class="crs-fbtn on" onclick="crsFilter('all',this)">Semua</button>
+                <button class="crs-fbtn" onclick="crsFilter('utm',this)">UTM</button>
+                <button class="crs-fbtn" onclick="crsFilter('tm3',this)">TM-3 Kadaster</button>
+                <button class="crs-fbtn" onclick="crsFilter('geo',this)">Geographic</button>
+                <button class="crs-fbtn" onclick="crsFilter('ecef',this)">ECEF</button>
+              </div>
+              <div class="crs-list" id="crs-list">
+                <div class="empty-state"><div class="empty-icon">🗺️</div><div class="empty-title">Klik tab CRS Output</div><div class="empty-sub">Setelah proses selesai</div></div>
+              </div>
+            </div>
+
+            <!-- LC/LW -->
+            <div class="res-pane" id="rt-lc">
+              <div class="section-hint">Kombinasi linear fase carrier dihitung dari kualitas solusi .pos output RTKLIB.</div>
+              <div class="lc-grid" id="lc-grid"></div>
+            </div>
+
+            <!-- Log -->
+            <div class="res-pane" id="rt-log">
+              <div class="logbox" id="logbox" style="max-height:300px">Menunggu proses...</div>
+            </div>
+
+            <div class="dl-row" id="dlrow" style="display:none">
+              <a class="dl-btn" id="dlpos" href="#" style="display:none">↓ .POS File</a>
+              <a class="dl-btn" id="dlconf" href="#" style="display:none">↓ Config</a>
+              <a class="dl-btn accent" id="dlrep" href="#">↓ Report PDF</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch results -->
+        <div id="batch-results" style="display:none">
+          <div class="card">
+            <div class="card-header">
+              <span class="card-num">B</span>
+              <span class="card-title">Batch Results</span>
+              <span id="batch-rjid" style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text3)"></span>
+            </div>
+            <div class="card-body">
+              <div class="file-list" id="batch-result-list"></div>
+              <div class="dl-grid" style="margin-top:4px">
+                <a class="dl-card off" id="bdl-csv" href="#"><div class="dl-icon">📊</div><div class="dl-label">CSV Summary</div><div class="dl-sub">Koordinat + CRS semua titik</div></a>
+                <a class="dl-card off" id="bdl-shp" href="#"><div class="dl-icon">🗺️</div><div class="dl-label">Shapefile</div><div class="dl-sub">.shp + .dbf + .prj (WGS-84)</div></a>
+                <a class="dl-card off" id="bdl-pdf" href="#"><div class="dl-icon">📄</div><div class="dl-label">Report PDF</div><div class="dl-sub">Laporan gabungan semua titik</div></a>
+                <a class="dl-card off" id="bdl-zip" href="#"><div class="dl-icon">📦</div><div class="dl-label">ZIP Semua</div><div class="dl-sub">CSV + SHP + PDF + POS files</div></a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ PAGE: History ══ -->
+    <div class="page" id="page-history">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">H</span>
+          <span class="card-title">Job History</span>
+        </div>
+        <div id="histlist">
+          <div class="empty-state">
+            <div class="empty-icon">🕐</div>
+            <div class="empty-title">Belum ada job</div>
+            <div class="empty-sub">History akan muncul setelah pemrosesan dijalankan.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <span class="toast-icon" id="toast-icon">✓</span>
+  <span class="toast-msg" id="toast-msg"></span>
+</div>
+
+<script>
+// ── Fetch with retry ─────────────────────────────────────────────────────────
+async function fetchRetry(url, options, retries, delay) {
+  retries = retries || 3;
+  delay   = delay   || 1000;
+  for (var i = 0; i <= retries; i++) {
+    try {
+      var res = await fetch(url, options);
+      return res;
+    } catch(e) {
+      if (i === retries) throw e;
+      await new Promise(function(r){ setTimeout(r, delay * (i + 1)); });
+    }
+  }
+}
+
+// ── Chunk upload with retry ───────────────────────────────────────────────────
+async function uploadChunkWithRetry(fd, retries) {
+  retries = retries || 3;
+  for (var i = 0; i <= retries; i++) {
+    try {
+      var res = await fetch('/upload/chunk', { method: 'POST', body: fd });
+      if (res.ok) return await res.json();
+      throw new Error('HTTP ' + res.status);
+    } catch(e) {
+      if (i === retries) throw e;
+      await new Promise(function(r){ setTimeout(r, 1000 * (i + 1)); });
+    }
+  }
+}
+
+
+// ── Navigation ──────────────────────────────────────────────────────────────
+const pageTitles = { processing:'Processing', queue:'Job Queue', results:'Results', history:'History' };
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('pageTitle').textContent = pageTitles[id] || id;
+  if (id === 'history') updateHist();
+}
+
+// ── Tabs ────────────────────────────────────────────────────────────────────
+function tab(id, btn) {
+  document.querySelectorAll('.tpane').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('on'));
+  document.getElementById(id).classList.add('on'); btn.classList.add('on');
+}
+function resTab(id, btn) {
+  document.querySelectorAll('.res-pane').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.res-tab').forEach(b => b.classList.remove('on'));
+  document.getElementById(id).classList.add('on'); btn.classList.add('on');
+}
+
+// ── Ephemeris toggle ────────────────────────────────────────────────────────
+let ephMode = 'auto';
+function setEph(mode) {
+  ephMode = mode;
+  document.getElementById('eph-auto').classList.toggle('on', mode === 'auto');
+  document.getElementById('eph-manual').classList.toggle('on', mode === 'manual');
+  document.getElementById('eph-auto-opts').style.display   = mode === 'auto'   ? 'block' : 'none';
+  document.getElementById('eph-manual-opts').classList.toggle('show', mode === 'manual');
+}
+
+// ── Multi-file upload ───────────────────────────────────────────────────────
+let obsFiles = [];
+// Per-file state
+var antHeights  = {};
+var antTypes    = {};
+var antParsed   = {};
+var fileTokens  = [];
+var baseUpPath  = '';
+var allUploaded = false;
+var curBatchId  = null;
+const multiDz   = document.getElementById('multi-dz');
+const obsInput  = document.getElementById('obs-input');
+
+function setFiles(files) {
+  obsFiles = Array.from(files);
+  fileTokens.length = 0;
+  allUploaded = false;
+  document.getElementById('nbFiles').textContent = obsFiles.length;
+  // Render dulu dengan status uploading
+  renderFileList(obsFiles.map(f => ({ name: f.name, status: 'uploading', progress: 0 })));
+  updateProcessBtn();
+  // Upload semua file ke server segera
+  uploadAllRovers();
+}
+
+async function uploadAllRovers() {
+  for (var i = 0; i < obsFiles.length; i++) {
+    await uploadOneRover(obsFiles[i], i);
+  }
+  allUploaded = true;
+  updateProcessBtn();
+}
+
+async function uploadOneRover(file, idx) {
+  return new Promise(async function(resolve) {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const uploadId = Math.random().toString(36).slice(2) + Date.now();
+    let lastResult = null;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end   = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      const fd = new FormData();
+      fd.append('upload_id',    uploadId);
+      fd.append('chunk_index',  i);
+      fd.append('total_chunks', totalChunks);
+      fd.append('filename',     file.name);
+      fd.append('file_type',    'rover');
+      fd.append('chunk',        chunk, file.name);
+
+      try {
+        const data = await uploadChunkWithRetry(fd);
+        lastResult = data;
+
+        // Update progress bar
+        const pct = Math.round((i + 1) / totalChunks * 100);
+        updateFileProgress(idx, pct);
+
+        if (data.done) {
+          fileTokens[idx] = data.token;
+          if (data.ant_height && !antParsed[idx]) {
+            antHeights[idx] = data.ant_height;
+            antParsed[idx]  = true;
+          }
+          var items = obsFiles.map(function(f, ii) {
+            return {
+              name: f.name,
+              status: fileTokens[ii] ? 'done' : (ii === idx ? 'done' : 'uploading'),
+              progress: fileTokens[ii] ? 100 : (ii === idx ? 100 : 0),
+              ant_height: antHeights[ii] || ''
+            };
+          });
+          renderFileList(items);
+          autoFillAntenna(file, idx);
+          resolve();
+          return;
+        }
+      } catch(e) {
+        updateFileProgress(idx, 0, 'error');
+        showToast('Upload gagal chunk ' + i + ': ' + file.name, 'err');
+        resolve();
+        return;
+      }
+    }
+    resolve();
+  });
+}
+
+function updateFileProgress(idx, pct, status) {
+  var items = obsFiles.map(function(f, i) {
+    if (i === idx) return { name: f.name, status: status || (pct < 100 ? 'uploading' : 'done'),
+                            progress: pct };
+    return { name: f.name,
+             status: fileTokens[i] ? 'done' : 'uploading',
+             progress: fileTokens[i] ? 100 : 0 };
+  });
+  renderFileList(items);
+}
+
+function updateProcessBtn() {
+  var btn = document.getElementById('btngo');
+  if (!btn) return;
+  var uploaded = fileTokens.filter(Boolean).length;
+  var total    = obsFiles.length;
+  if (total === 0) {
+    btn.disabled = true;
+    btn.className = 'btn-primary';
+    document.getElementById('btntxt').textContent = '▶ Proses Data';
+  } else if (uploaded < total) {
+    btn.disabled = true;
+    btn.className = 'btn-primary';
+    document.getElementById('btntxt').textContent = 'Mengupload ' + uploaded + '/' + total + '...';
+  } else {
+    btn.disabled = false;
+    btn.className = 'btn-primary btn-ready';
+    document.getElementById('btntxt').textContent = '▶ Proses Data (' + total + ' titik)';
+  }
+}
+
+obsInput.addEventListener('change', () => setFiles(obsInput.files));
+multiDz.addEventListener('dragover',  e => { e.preventDefault(); multiDz.classList.add('ov'); });
+multiDz.addEventListener('dragleave', () => multiDz.classList.remove('ov'));
+multiDz.addEventListener('drop', e => {
+  e.preventDefault(); multiDz.classList.remove('ov');
+  const dt = new DataTransfer();
+  Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+  obsInput.files = dt.files; setFiles(dt.files);
+});
+
+function removeFile(idx) {
+  obsFiles.splice(idx, 1);
+  // Reindex antHeights
+  const newAnt = {}, newParsed = {}, newTypes = {};
+  obsFiles.forEach((_, i) => {
+    const oldIdx = i < idx ? i : i + 1;
+    if (antHeights[oldIdx] !== undefined) newAnt[i]   = antHeights[oldIdx];
+    if (antParsed[oldIdx]  !== undefined) newParsed[i]= antParsed[oldIdx];
+    if (antTypes[oldIdx]   !== undefined) newTypes[i] = antTypes[oldIdx];
+  });
+  Object.keys(antHeights).forEach(k => delete antHeights[k]);
+  Object.keys(antParsed).forEach(k => delete antParsed[k]);
+  Object.keys(antTypes).forEach(k => delete antTypes[k]);
+  Object.assign(antHeights, newAnt);
+  Object.assign(antParsed, newParsed);
+  Object.assign(antTypes, newTypes);
+  document.getElementById('nbFiles').textContent = obsFiles.length;
+  renderFileList(obsFiles.map(f => ({ name: f.name, status: 'queued' })));
+  // Sync back to input
+  const dt = new DataTransfer();
+  obsFiles.forEach(f => dt.items.add(f));
+  obsInput.files = dt.files;
+}
+
+// Per-file state (declarations moved to top)
+
+function getAntHeight(idx) {
+  return antHeights[idx] !== undefined ? antHeights[idx] : '';
+}
+function setAntHeight(idx, val) {
+  antHeights[idx] = val;
+  // Update input field jika sudah render
+  var inp = document.getElementById('ant-inp-' + idx);
+  if (inp) inp.value = val;
+}
+
+// Parse RINEX header di browser (8KB pertama)
+async function parseRinexHeader(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const lines = e.target.result.split(/\r?\n/);
+        let antHeight = '', antType = '', markerName = '', approxPos = null;
+        for (const line of lines) {
+          if (line.includes('END OF HEADER')) break;
+          if (line.includes('ANTENNA: DELTA H/E/N')) {
+            const h = parseFloat(line.substring(0, 14).trim());
+            if (!isNaN(h) && h >= 0) antHeight = h.toFixed(3);
+          }
+          if (line.includes('ANT # / TYPE')) {
+            const t = line.substring(20, 40).trim();
+            if (t) antType = t;
+          }
+          if (line.includes('MARKER NAME')) {
+            const m = line.substring(0, 60).trim();
+            if (m) markerName = m;
+          }
+          if (line.includes('APPROX POSITION XYZ')) {
+            const x = parseFloat(line.substring(0,  14).trim());
+            const y = parseFloat(line.substring(14, 28).trim());
+            const z = parseFloat(line.substring(28, 42).trim());
+            if (!isNaN(x) && !isNaN(y) && !isNaN(z)) approxPos = { x, y, z };
+          }
+        }
+        resolve({ antHeight, antType, markerName, approxPos });
+      } catch(err) { resolve(null); }
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsText(file.slice(0, 8192));
+  });
+}
+
+// Fallback: parse di server
+async function parseRinexHeaderServer(file) {
+  try {
+    const fd = new FormData();
+    fd.append('obs_file', file);
+    const res  = await fetch('/parse_header', { method: 'POST', body: fd });
+    const data = await res.json();
+    return data.error ? null : data;
+  } catch(e) { return null; }
+}
+
+// Auto-fill antena per file
+async function autoFillAntenna(file, idx) {
+  let meta = await parseRinexHeader(file);
+  if (!meta || (!meta.antHeight && !meta.antType)) {
+    meta = await parseRinexHeaderServer(file);
+  }
+  if (!meta) return;
+  if (meta.antHeight && !antParsed[idx]) {
+    antHeights[idx] = meta.antHeight;
+  }
+  if (meta.antType) antTypes[idx] = meta.antType;
+  antParsed[idx] = true;
+  // Update DOM input jika sudah render
+  const inp = document.getElementById('ant-inp-' + idx);
+  if (inp && meta.antHeight) {
+    inp.value = meta.antHeight;
+    inp.style.borderColor = 'var(--success)';
+    inp.title = 'Auto dari header RINEX' + (meta.antType ? ' · ' + meta.antType : '');
+  }
+}
+
+function renderFileList(items) {
+  var list = document.getElementById('file-list');
+  if (!items.length) { list.innerHTML = ''; updateProcessBtn(); return; }
+  var colMap = {
+    queued:'var(--text3)', uploading:'var(--accent-l)',
+    downloading:'var(--accent-l)', processing:'var(--accent-l)',
+    done:'var(--success)', demo:'var(--warn)', error:'var(--error)'
+  };
+  list.innerHTML = items.map(function(item, i) {
+    var col = colMap[item.status] || 'var(--text3)';
+    var pct = item.progress !== undefined ? item.progress : 0;
+    var isUploading = item.status === 'uploading';
+    var isDone      = item.status === 'done';
+    var isError     = item.status === 'error';
+    var antVal = antHeights[i] || item.ant_height || '';
+
+    // Status label
+    var statusEl = '';
+    if (isUploading) {
+      statusEl = '<div class="fi-up-bar"><div class="fi-up-fill" style="width:'+pct+'%"></div></div>'
+               + '<span class="fi-up-pct">'+pct+'%</span>';
+    } else if (isDone) {
+      statusEl = '<span class="fi-up-ok">✓</span>';
+    } else if (isError) {
+      statusEl = '<span style="color:var(--error);font-size:11px">✕</span>';
+    } else {
+      statusEl = '<span class="fi-status" style="color:'+col+'">·</span>';
+    }
+
+    // Antenna input — tampil saat done
+    var antEl = '';
+    if (isDone) {
+      antEl = '<div class="fi-ant-wrap">'
+        + '<span class="fi-ant-lbl">h</span>'
+        + '<input class="fi-ant-inp" id="ant-inp-'+i+'" type="number" min="0" step="0.001"'
+        + ' placeholder="1.800" value="'+antVal+'"'
+        + ' oninput="setAntHeight('+i+', this.value)"'
+        + ' title="Tinggi antena rover (m)">'
+        + '<span class="fi-ant-lbl">m</span>'
+        + '</div>';
+    }
+
+    // Remove button — hanya saat belum proses
+    var removeEl = (isDone || item.status === 'queued')
+      ? '<button class="fi-remove" onclick="removeFile('+i+')" title="Hapus">×</button>'
+      : '';
+
+    return '<div class="file-item st-'+item.status+'">'
+      + '<span class="fi-idx">'+(i+1)+'</span>'
+      + '<span class="fi-name" title="'+item.name+'">'+item.name+'</span>'
+      + antEl
+      + statusEl
+      + removeEl
+      + '</div>';
+  }).join('');
+  updateProcessBtn();
+}
+
+// ── Single file drop zones (base, nav, sp3) ─────────────────────────────────
+['base','nav','sp3'].forEach(function(n) {
+  var dz  = document.getElementById('dz-'+n);
+  var inp = document.getElementById('f-'+n);
+  var fn  = document.getElementById('fn-'+n);
+  if (!dz || !inp) return;
+
+  function onFileSet(file) {
+    fn.textContent = file.name;
+    dz.classList.add('has-file');
+    var ico = dz.querySelector('.dz-icon');
+    if (ico) ico.textContent = '✓';
+    if (n === 'base') {
+      uploadBase(file);
+    }
+  }
+
+  inp.addEventListener('change', function() { if (inp.files[0]) onFileSet(inp.files[0]); });
+  dz.addEventListener('dragover',  function(e) { e.preventDefault(); dz.classList.add('ov'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('ov'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault(); dz.classList.remove('ov');
+    if (e.dataTransfer.files[0]) {
+      var dt = new DataTransfer(); dt.items.add(e.dataTransfer.files[0]);
+      inp.files = dt.files;
+      onFileSet(e.dataTransfer.files[0]);
+    }
+  });
+});
+
+function uploadBase(file) {
+  var wrap = document.getElementById('base-up-wrap');
+  var fill = document.getElementById('base-up-fill');
+  var pct  = document.getElementById('base-up-pct');
+  var lbl  = document.getElementById('base-up-label');
+  if (!wrap) return;
+  wrap.style.display = 'block';
+  fill.style.width   = '0%';
+  fill.style.background = 'var(--accent-l)';
+  pct.textContent    = '0%';
+  lbl.textContent    = 'Mengupload ' + file.name + '...';
+
+  var CHUNK_SIZE  = 2 * 1024 * 1024;
+  var totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  var uploadId    = Math.random().toString(36).slice(2) + Date.now();
+  var token       = fileTokens[0] || '';
+
+  (async function() {
+    try {
+      for (var i = 0; i < totalChunks; i++) {
+        var start = i * CHUNK_SIZE;
+        var end   = Math.min(start + CHUNK_SIZE, file.size);
+        var chunk = file.slice(start, end);
+        var fd    = new FormData();
+        fd.append('upload_id',    uploadId);
+        fd.append('chunk_index',  i);
+        fd.append('total_chunks', totalChunks);
+        fd.append('filename',     file.name);
+        fd.append('file_type',    'base');
+        fd.append('token',        token);
+        fd.append('chunk',        chunk, file.name);
+
+        var data = await uploadChunkWithRetry(fd);
+        var p    = Math.round((i + 1) / totalChunks * 100);
+        fill.style.width = p + '%';
+        pct.textContent  = p + '%';
+
+        if (data.done) {
+          baseUpPath = data.path || '';
+          lbl.textContent = '✓ ' + file.name + ' terupload';
+          fill.style.background = 'var(--success)';
+          // Auto-fill koordinat base
+          if (data.lat) {
+            var bl = document.getElementById('blat');
+            var bn = document.getElementById('blon');
+            var bh = document.getElementById('bht');
+            if (bl && !bl.value) { bl.value = data.lat; bl.style.borderColor='var(--success)'; }
+            if (bn && !bn.value) { bn.value = data.lon; bn.style.borderColor='var(--success)'; }
+            if (bh && !bh.value) { bh.value = data.h;   bh.style.borderColor='var(--success)'; }
+          }
+          if (data.ant_height) {
+            var ab = document.getElementById('ant-base');
+            if (ab && !ab.value) { ab.value = data.ant_height; ab.style.borderColor='var(--success)'; }
+          }
+          var notice = document.getElementById('base-coord-notice');
+          if (notice && data.lat) {
+            notice.textContent = '✓ Koordinat base diisi dari header RINEX. Override jika perlu.';
+            notice.className = 'notice info';
+          }
+          return;
+        }
+      }
+    } catch(e) {
+      lbl.textContent = '✕ Upload gagal: ' + e.message;
+      fill.style.background = 'var(--error)';
+      showToast('Upload base gagal: ' + e.message, 'err');
+    }
+  })();
+}
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function sysMask() {
+  return [['sGPS',1],['sGLO',8],['sGAL',4],['sBDS',32],['sQZS',64],['sSBS',2]]
+    .filter(([id]) => document.getElementById(id).checked)
+    .reduce((a,[,v]) => a+v, 0) || 1;
+}
+function getParams() {
+  const bl = document.getElementById('blat').value;
+  const bln= document.getElementById('blon').value;
+  const bh = document.getElementById('bht').value;
+  return {
+    mode:           document.getElementById('mode').value,
+    elevation_mask: document.getElementById('elev').value,
+    snr_mask:       document.getElementById('snr').value,
+    amb_res:        document.getElementById('ambres').value,
+    max_gdop:       document.getElementById('maxgdop').value,
+    freq:           document.getElementById('freq').value,
+    sys_mask:       sysMask(),
+    filter:         document.getElementById('filter').value,
+    min_sat:        document.getElementById('minsat').value,
+    iono:           document.getElementById('iono').value,
+    tropo:          document.getElementById('tropo').value,
+    earth_tides:    document.getElementById('etides').value,
+    phase_windup:   document.getElementById('windup').value,
+    cs_lc:          document.getElementById('csLC').checked?1:0,
+    cs_gf:          document.getElementById('csGF').checked?1:0,
+    cs_dop:         document.getElementById('csDOP').checked?1:0,
+    max_age:        document.getElementById('maxage').value,
+    out_interval:   '0',
+    base_lat:       bl, base_lon: bln, base_ht: bh,
+    ant_ht_rover:   '0',  // per-file, handled in processSingle/processBatch
+    ant_ht_rover_type: '0',
+    ant_ht_base:    document.getElementById('ant-base').value || '0',
+    ant_ht_base_type: '0',
+  };
+}
+function setStatus(state, txt) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (state==='proc'?' proc':state==='idle'?' idle':'');
+  document.getElementById('statusTxt').textContent = txt;
+}
+function modeLbl() {
+  return {'single':'Single','dgps':'DGPS','kinematic':'Kinematic','static':'Static',
+    'ppp-static':'PPP-Static','ppp-kinematic':'PPP-Kinematic'}[document.getElementById('mode').value]||'Static';
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, type, duration) {
+  type = type || 'ok'; duration = duration || 3500;
+  var t  = document.getElementById('toast');
+  var ti = document.getElementById('toast-icon');
+  var tm = document.getElementById('toast-msg');
+  ti.textContent = type==='ok' ? '✓' : type==='err' ? '✕' : 'ℹ';
+  tm.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, duration);
+}
+
+// ── Upload via XHR dengan progress ───────────────────────────────────────────
+function uploadWithProgress(url, fd, onProgress) {
+  return new Promise(function(resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.upload.addEventListener('progress', function(e) {
+      if (e.lengthComputable) onProgress(Math.round(e.loaded/e.total*100));
+    });
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch(e) { reject(new Error('Invalid response dari server')); }
+      } else {
+        try {
+          var d = JSON.parse(xhr.responseText);
+          reject(new Error(d.error || 'Server error ' + xhr.status));
+        } catch(e) { reject(new Error('Server error ' + xhr.status)); }
+      }
+    };
+    xhr.onerror = function() { reject(new Error('Network error — cek koneksi ke server')); };
+    xhr.send(fd);
+  });
+}
+
+function setUploadProg(pct, label) {
+  var wrap = document.getElementById('upload-prog-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('upload-prog-fill').style.width = pct + '%';
+  document.getElementById('upload-prog-pct').textContent = pct + '%';
+  if (label) document.getElementById('upload-prog-label').textContent = label;
+}
+function hideUploadProg() {
+  document.getElementById('upload-prog-wrap').style.display = 'none';
+}
+
+// ── Main Process ──────────────────────────────────────────────────────────────
+var curId = null, curBatchId = null, poll = null, batchPoll = null;
+var queuePollTimer = null;
+
+async function go() {
+  var uploaded = fileTokens.filter(Boolean).length;
+  if (!obsFiles.length || uploaded === 0) {
+    showToast('Pilih file OBS terlebih dahulu!', 'err'); return;
+  }
+  if (uploaded < obsFiles.length) {
+    showToast('Tunggu upload selesai (' + uploaded + '/' + obsFiles.length + ')', 'err'); return;
+  }
+  if (ephMode === 'manual' && !document.getElementById('f-nav').files[0]) {
+    showToast('Upload Navigation file atau pilih Auto IGS!', 'err'); return;
+  }
+
+  document.getElementById('btngo').disabled = true;
+  document.getElementById('spn').style.display = 'block';
+  document.getElementById('btntxt').textContent = 'Mengirim ke queue...';
+  document.getElementById('errbox').style.display = 'none';
+  setStatus('proc', 'Processing...');
+  crsLoaded = false; crsData = [];
+
+  var params  = getParams();
+  var antArr  = obsFiles.map(function(_, i) { return antHeights[i] || '0'; });
+  var payload = {
+    tokens:           fileTokens.filter(Boolean),
+    params:           params,
+    base_path:        baseUpPath,
+    ephemeris_source: ephMode === 'manual' ? 'manual' : 'igs',
+    ephemeris_type:   document.getElementById('eph-type').value,
+    ant_heights:      antArr,
+  };
+
+  try {
+    var res  = await fetchRetry('/upload/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, 3, 1000);
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    if (data.job_id) {
+      curId = data.job_id;
+      document.getElementById('jobIdBadge').textContent = 'JOB #' + curId;
+      showToast('Job #' + curId + ' ditambahkan ke queue', 'ok');
+    } else {
+      curBatchId = data.batch_id;
+      document.getElementById('jobIdBadge').textContent = 'BATCH #' + curBatchId;
+      showToast('Batch #' + curBatchId + ' — ' + data.n_points + ' titik', 'ok');
+    }
+    resetBtn();
+    showPage('queue', document.getElementById('navQueue'));
+    startQueuePolling();
+
+  } catch(e) {
+    showToast(e.message, 'err', 6000);
+    document.getElementById('errbox').style.display = 'block';
+    document.getElementById('errbox').textContent = '✕ ' + e.message;
+    resetBtn();
+    setStatus('idle', 'Error');
+    startQueuePolling();
+  }
+}
+
+
+async function processSingle(params) {
+  var fd = new FormData();
+  fd.append('rover', obsFiles[0]);
+  fd.append('ant_ht_rover', getAntHeight(0) || '0');
+  var base = document.getElementById('f-base').files[0];
+  if (base) fd.append('base', base);
+
+  if (ephMode === 'manual') {
+    fd.append('nav', document.getElementById('f-nav').files[0]);
+    var sp3 = document.getElementById('f-sp3').files[0];
+    if (sp3) fd.append('sp3', sp3);
+    fd.append('ephemeris_source', 'manual');
+  } else {
+    fd.append('ephemeris_source', 'igs');
+    fd.append('ephemeris_type', document.getElementById('eph-type').value);
+  }
+  Object.entries(params).forEach(function(e){ fd.append(e[0], e[1]); });
+
+  setUploadProg(0, 'Mengupload file...');
+  var data = await uploadWithProgress('/process', fd, function(pct) {
+    setUploadProg(pct, 'Mengupload... ' + pct + '%');
+  });
+  if (data.error) throw new Error(data.error);
+
+  curId = data.job_id;
+  document.getElementById('jobIdBadge').textContent = 'JOB #' + curId;
+  hideUploadProg();
+  resetBtn();
+  showToast('Job #' + curId + ' ditambahkan ke queue', 'ok');
+  showPage('queue', document.getElementById('navQueue'));
+  startQueuePolling();  // resume polling
+}
+
+async function processBatch(params) {
+  var fd = new FormData();
+  obsFiles.forEach(function(f){ fd.append('obs_files', f); });
+  var antArr = obsFiles.map(function(_,i){ return getAntHeight(i) || '0'; });
+  fd.append('ant_heights', JSON.stringify(antArr));
+  var base = document.getElementById('f-base').files[0];
+  if (base) fd.append('base_file', base);
+
+  if (ephMode === 'manual') {
+    var nav = document.getElementById('f-nav').files[0];
+    if (nav) fd.append('nav_file', nav);
+    fd.append('ephemeris_source', 'manual');
+  } else {
+    fd.append('ephemeris_source', 'igs');
+    fd.append('ephemeris_type', document.getElementById('eph-type').value);
+  }
+  Object.entries(params).forEach(function(e){ fd.append(e[0], e[1]); });
+
+  var totalMB = (obsFiles.reduce(function(s,f){ return s+f.size; }, 0)/1024/1024).toFixed(1);
+  setUploadProg(0, 'Mengupload ' + obsFiles.length + ' file (' + totalMB + ' MB)...');
+  var data = await uploadWithProgress('/batch/create', fd, function(pct) {
+    setUploadProg(pct, 'Mengupload ' + obsFiles.length + ' file... ' + pct + '%');
+  });
+  if (data.error) throw new Error(data.error);
+
+  curBatchId = data.batch_id;
+  document.getElementById('jobIdBadge').textContent = 'BATCH #' + curBatchId;
+  hideUploadProg();
+  resetBtn();
+  showToast('Batch #' + curBatchId + ' — ' + data.n_points + ' titik ditambahkan ke queue', 'ok');
+  showPage('queue', document.getElementById('navQueue'));
+  startQueuePolling();  // resume polling
+}
+
+function updateBatchProgress(bst) {
+  const total = bst.n_total || 1;
+  const done  = bst.n_done + bst.n_error;
+  const pct   = Math.round(done / total * 100);
+  document.getElementById('batch-overall-fill').style.width = pct + '%';
+  document.getElementById('batch-prog-pct').textContent = pct + '%';
+  document.getElementById('bp-done').textContent = bst.n_done;
+  document.getElementById('bp-err').textContent  = bst.n_error;
+  document.getElementById('bp-run').textContent  = bst.n_running;
+  if (bst.points) renderFileList(bst.points.map(p => ({
+    name: p.name, status: p.status, progress: p.progress, error: p.error
+  })));
+}
+
+function showSingleResult(job) {
+  resetBtn();
+  setStatus('online', 'Done — '+job.id);
+  document.getElementById('results-empty').style.display = 'none';
+  document.getElementById('results-content').style.display = 'block';
+  document.getElementById('rpanel').style.display = 'block';
+  document.getElementById('batch-results').style.display = 'none';
+
+  const s = job.summary;
+  if (!s) { showErr('Tidak ada hasil'); return; }
+
+  document.getElementById('demobdg').style.display = s.demo ? 'inline-flex' : 'none';
+
+  // Param summary
+  const bl = document.getElementById('blat').value;
+  const ephLabel = ephMode==='auto'
+    ? `IGS-${document.getElementById('eph-type').value}`
+    : 'Manual';
+  document.getElementById('psumm').innerHTML =
+    `MODE: <span>${modeLbl()}</span>  EPH: <span>${ephLabel}</span>  ` +
+    `EL: <span>${document.getElementById('elev').value}°</span>  ` +
+    `AMB: <span>${document.getElementById('ambres').value}</span>  ` +
+    `BASE: <span>${bl ? bl+'°' : 'header RINEX'}</span>`;
+
+  // Coordinates tab
+  document.getElementById('rlat').textContent = s.lat_mean.toFixed(8);
+  document.getElementById('rlon').textContent = s.lon_mean.toFixed(8);
+  document.getElementById('rht').textContent  = s.height_mean.toFixed(4);
+  document.getElementById('rtot').textContent = (s.total_epochs||0).toLocaleString();
+  document.getElementById('rfix').textContent = (s.fixed_epochs||0).toLocaleString();
+  const r = s.fix_ratio||0, re = document.getElementById('rratio');
+  re.textContent = r+'%';
+  re.className = 'mini-val '+(r>=80?'g':r>=50?'w':'r');
+  document.getElementById('rmode').textContent = (job.mode||'').toUpperCase();
+  const ref = 0.05;
+  [['lat',s.lat_std,'barlat','pvlat'],['lon',s.lon_std,'barlon','pvlon'],['ht',s.ht_std,'barht','pvht']]
+    .forEach(([,v,b,p]) => {
+      document.getElementById(b).style.width = Math.min(100,(v/ref)*100)+'%';
+      document.getElementById(p).textContent = (v||0).toFixed(5)+' m';
+    });
+
+  // Solution detail tab
+  const total = s.total_epochs || 1;
+  [['qb1','qv1',s.fixed_epochs||0],['qb2','qv2',s.float_epochs||0],
+   ['qb3','qv3',s.sbas_epochs||0],['qb4','qv4',s.dgps_epochs||0],
+   ['qb5','qv5',s.single_epochs||0]].forEach(([b,v,n]) => {
+    const pct = (n/total*100).toFixed(1);
+    document.getElementById(b).style.width = pct+'%';
+    document.getElementById(v).textContent = `${n.toLocaleString()} (${pct}%)`;
+  });
+  const sv = (id,val) => { const el=document.getElementById(id); if(el) el.textContent=(typeof val==='number'?val.toFixed(2):val)||'—'; };
+  sv('sol-cep',s.cep_mm); sv('sol-sep',s.sep_mm);
+  sv('sol-rmsh',s.rms_h); sv('sol-rmsv',s.rms_v); sv('sol-rms3d',s.rms_3d);
+  const ar=document.getElementById('sol-ar');
+  if(ar){ar.textContent=(s.amb_ratio||0).toFixed(1);ar.className='sol-val '+(s.amb_ratio>=80?'g':s.amb_ratio>=50?'w':'r');}
+  sv('sol-nsm',s.ns_mean);
+  const nsmm=document.getElementById('sol-nsmm'); if(nsmm) nsmm.textContent=`${s.ns_min||'—'} / ${s.ns_max||'—'}`;
+  sv('sol-pdop',s.pdop_mean);
+  const sdn=document.getElementById('sol-sdn'); if(sdn) sdn.textContent=((s.sdn_mean||0)*1000).toFixed(2);
+  const sde=document.getElementById('sol-sde'); if(sde) sde.textContent=((s.sde_mean||0)*1000).toFixed(2);
+  const sdu=document.getElementById('sol-sdu'); if(sdu) sdu.textContent=((s.sdu_mean||0)*1000).toFixed(2);
+
+  // LC tab
+  renderLCCards(s.lc_info);
+
+  // Log tab
+  let log = s.demo ? '[DEMO] rnx2rtkp not installed\n' : '';
+  if (job.stderr) log += job.stderr+'\n';
+  if (job.stdout) log += job.stdout.substring(0,800);
+  if (job.cmd)    log += '\n[CMD] '+job.cmd;
+  document.getElementById('logbox').textContent = log||'[OK] Selesai';
+
+  // Downloads
+  document.getElementById('dlrow').style.display = 'flex';
+  const dp=document.getElementById('dlpos'), dc=document.getElementById('dlconf');
+  if(job.result_file){dp.style.display='inline-flex';dp.href='/download/'+job.id;}
+  if(dc){dc.style.display='inline-flex';dc.href='/config/'+job.id;}
+  document.getElementById('dlrep').href='/report/'+job.id;
+
+  // Nav badge
+  const nb=document.getElementById('nbResult');
+  nb.style.display='inline'; nb.style.color='var(--success)';
+  showPage('results', document.getElementById('navResults'));
+  refreshQueue();
+  updateHist();
+}
+
+function showBatchResult(bst) {
+  setStatus('online','Batch done — '+curBatchId);
+  document.getElementById('results-empty').style.display = 'none';
+  document.getElementById('results-content').style.display = 'block';
+  document.getElementById('rpanel').style.display = 'none';
+  document.getElementById('batch-results').style.display = 'block';
+  document.getElementById('batch-rjid').textContent = 'BATCH #'+curBatchId;
+
+  // Point list in results
+  if (bst.points) {
+    document.getElementById('batch-result-list').innerHTML =
+      bst.points.map((p,i) => {
+        const col = p.status==='done'?'var(--success)':p.status==='demo'?'var(--warn)':p.status==='error'?'var(--error)':'var(--text3)';
+        const fix  = p.summary ? p.summary.fix_ratio+'%' : '—';
+        const cep  = p.summary ? (p.summary.cep_mm||0).toFixed(1)+' mm' : p.error||'—';
+        return `<div class="file-item st-${p.status}">
+          <span class="fi-idx">${i+1}</span>
+          <span class="fi-name">${p.name}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text3);flex-shrink:0">Fix: ${fix}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text3);flex-shrink:0;min-width:70px;text-align:right">CEP: ${cep}</span>
+          <span class="fi-status" style="color:${col}">${p.status==='done'?'✓':p.status==='demo'?'~':p.status==='error'?'✕':'·'}</span>
+        </div>`;
+      }).join('');
+  }
+
+  // Download buttons
+  const bid = curBatchId;
+  const setDl = (id, ready, url) => {
+    const el = document.getElementById(id);
+    if (ready) { el.classList.remove('off'); el.href = url; }
+  };
+  setDl('bdl-csv', bst.csv_ready, `/batch/download/${bid}/csv`);
+  setDl('bdl-shp', bst.shp_ready, `/batch/download/${bid}/shp`);
+  setDl('bdl-pdf', bst.pdf_ready, `/batch/download/${bid}/pdf`);
+  setDl('bdl-zip', bst.zip_ready, `/batch/download/${bid}/zip`);
+
+  const nb=document.getElementById('nbResult');
+  nb.style.display='inline'; nb.style.color='var(--success)';
+  showPage('results', document.getElementById('navResults'));
+  refreshQueue();
+  updateHist();
+}
+
+function showErr(msg) {
+  const e = document.getElementById('errbox');
+  e.style.display='block'; e.textContent='✕ '+msg;
+  document.getElementById('results-empty').style.display='none';
+  document.getElementById('results-content').style.display='block';
+  setStatus('idle','Error');
+  updateHist();
+}
+function resetBtn() {
+  document.getElementById('btngo').disabled=false;
+  document.getElementById('spn').style.display='none';
+  document.getElementById('btntxt').textContent='▶ Proses Data';
+  setTimeout(()=>document.getElementById('prog').style.display='none',1200);
+}
+
+// ── CRS ─────────────────────────────────────────────────────────────────────
+let crsLoaded=false, crsData=[], crsActive='all';
+const CRS_PRIORITY=[4326,9470,32749,23830];
+function crsCat(s){return s.startsWith('UTM')?'utm':s.startsWith('TM3')?'tm3':s.startsWith('ECEF')?'ecef':'geo';}
+
+async function loadCRS() {
+  if (!curId||crsLoaded) return;
+  document.getElementById('crs-list').innerHTML='<div class="empty-state"><div class="empty-icon">⟳</div><div class="empty-title">Menghitung...</div></div>';
+  try {
+    const res=await fetch('/crs/'+curId), data=await res.json();
+    if(data.error) throw new Error(data.error);
+    crsData=data.crs; crsLoaded=true; renderCRS(crsData);
+  } catch(e) {
+    document.getElementById('crs-list').innerHTML=`<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">${e.message}</div></div>`;
+  }
+}
+function crsFilter(cat,btn) {
+  crsActive=cat;
+  document.querySelectorAll('.crs-fbtn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderCRS(cat==='all'?crsData:crsData.filter(c=>crsCat(c.short)===cat));
+}
+function renderCRS(list) {
+  if(!list||!list.length){document.getElementById('crs-list').innerHTML='<div class="empty-state"><div class="empty-title">Tidak ada data</div></div>';return;}
+  const sorted=[...list].sort((a,b)=>{const pa=CRS_PRIORITY.indexOf(a.epsg),pb=CRS_PRIORITY.indexOf(b.epsg);if(pa!==-1&&pb!==-1)return pa-pb;if(pa!==-1)return -1;if(pb!==-1)return 1;return a.name.localeCompare(b.name);});
+  document.getElementById('crs-list').innerHTML=sorted.map(crs=>{
+    const hi=CRS_PRIORITY.includes(crs.epsg);
+    const keys=Object.keys(crs.coords), vals=Object.values(crs.coords);
+    const main3=keys.slice(0,3).map((k,i)=>`<div class="crs-coord"><div class="crs-coord-lbl">${k}</div><div class="crs-coord-val">${typeof vals[i]==='number'?(Math.abs(vals[i])>1000?vals[i].toFixed(3):vals[i].toFixed(8)):vals[i]}</div></div>`).join('');
+    const extras=keys.slice(3).map((k,i)=>`<div class="crs-ei"><span class="crs-el">${k}:</span><span class="crs-ev">${vals[i+3]}</span></div>`).join('');
+    const copyStr=keys.slice(0,3).map((k,i)=>k+': '+vals[i]).join(' | ');
+    return `<div class="crs-card ${hi?'hi':''}">
+      <div class="crs-header">
+        <span class="crs-epsg ${hi?'on':''}">EPSG:${crs.epsg||'—'}</span>
+        <span class="crs-name">${crs.name}</span>
+        <span class="crs-unit">${crs.unit}</span>
+        <button class="crs-copy" onclick="copyCRS(event,'${copyStr}')">copy</button>
+      </div>
+      <div class="crs-body">
+        <div class="crs-coords">${main3}</div>
+        ${extras?'<div class="crs-extra">'+extras+'</div>':''}
+        <div class="crs-note">${crs.note}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function copyCRS(e,text){e.stopPropagation();navigator.clipboard.writeText(text).then(()=>{const b=e.target;b.textContent='copied!';b.style.color='var(--success)';setTimeout(()=>{b.textContent='copy';b.style.color='';},1500);});}
+
+// ── LC cards ────────────────────────────────────────────────────────────────
+const LC_COLS=['#818cf8','#3fb950','#d29922','#f85149','#58a6ff'];
+function renderLCCards(lcInfo) {
+  const g=document.getElementById('lc-grid');
+  if(!lcInfo||!lcInfo.length){g.innerHTML='<div class="section-hint">Data LC/LW tidak tersedia.</div>';return;}
+  const maxRms=Math.max(...lcInfo.map(lc=>lc.rms_mm));
+  g.innerHTML=lcInfo.map((lc,i)=>{
+    const col=LC_COLS[i%LC_COLS.length], pct=Math.min(100,(lc.rms_mm/(maxRms||1))*100);
+    const lw=lc.wavelength>0?`<span class="lc-lam">λ=${lc.wavelength} cm</span>`:'<span class="lc-lam">N/A</span>';
+    return `<div class="lc-card">
+      <div class="lc-hdr"><span class="lc-name" style="color:${col}">${lc.name}</span>${lw}</div>
+      <div class="lc-formula">${lc.description}</div>
+      <div class="lc-metrics">
+        <div class="lc-m"><div class="lc-ml">RMS</div><div class="lc-mv" style="color:${col}">${lc.rms_mm} mm</div></div>
+        <div class="lc-m"><div class="lc-ml">Std</div><div class="lc-mv">${lc.std_mm} mm</div></div>
+        <div class="lc-m"><div class="lc-ml">Mean</div><div class="lc-mv">${lc.mean_mm} mm</div></div>
+      </div>
+      <div class="lc-rbar"><div class="lc-rbg"><div class="lc-rf" style="width:${pct}%;background:${col}"></div></div></div>
+      <div class="lc-slip">⚡ ${lc.n_slip} slip${lc.n_slip!==1?'s':''}</div>
+      <div class="lc-use">${lc.use}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Internet connectivity check ────────────────────────────────────────────
+async function checkInternet() {
+  try {
+    const res = await fetch('/check_internet', { method:'GET' });
+    const d   = await res.json();
+    const warn = document.getElementById('eph-inet-warn');
+    if (warn && !d.ok) warn.style.display = 'block';
+  } catch(e) {}
+}
+// Jalankan saat load
+window.addEventListener('load', () => {
+  setTimeout(checkInternet, 1000);
+  startQueuePolling();   // mulai polling queue otomatis
+});
+
+
+// ══ JOB QUEUE MANAGER ══════════════════════════════════════════════════════════
+
+const STATUS_COL = {
+  queued:'var(--text3)', downloading:'var(--accent-l)',
+  processing:'var(--accent-l)', running:'var(--accent-l)',
+  generating:'var(--accent-l)', done:'var(--success)',
+  demo:'var(--warn)', error:'var(--error)'
+};
+const STATUS_LABEL = {
+  queued:'Queue', downloading:'↓ EPH', processing:'⟳ Processing',
+  running:'⟳ Running', generating:'⟳ Generating', done:'✓ Done',
+  demo:'~ Demo', error:'✕ Error'
+};
+
+function badgeClass(st) {
+  return st==='done'?'bd':st==='demo'?'bm':st==='error'?'be':
+    (st==='processing'||st==='running'||st==='downloading'||st==='generating')?'bp':'bq';
+}
+
+// ── Render single job card ─────────────────────────────────────────────────
+function renderQueueItem(j, isBatch) {
+  const col   = STATUS_COL[j.status]  || 'var(--text3)';
+  const label = STATUS_LABEL[j.status]|| j.status;
+  const isRunning = ['queued','downloading','processing','running','generating'].includes(j.status);
+  const isDone    = ['done','demo'].includes(j.status);
+  const isError   = j.status === 'error';
+
+  // Name
+  const name = isBatch
+    ? `BATCH — ${j.n_points||j.n_total||'?'} titik`
+    : (j.rover || j.id);
+
+  // Progress bar (batch only)
+  let progHtml = '';
+  if (isBatch && isRunning) {
+    const total = j.n_total || j.n_points || 1;
+    const done  = (j.n_done||0) + (j.n_error||0);
+    const pct   = Math.round(done/total*100);
+    progHtml = `<div class="qi-prog-wrap">
+      <div class="qi-prog-bar"><div class="qi-prog-fill" style="width:${pct}%"></div></div>
+      <div class="qi-prog-txt">${done}/${total} titik · ${pct}%
+        ${j.n_error?`<span style="color:var(--error)"> · ${j.n_error} error</span>`:''}
+      </div>
+    </div>`;
+  } else if (!isBatch && isRunning) {
+    progHtml = `<div class="qi-prog-wrap">
+      <div class="qi-prog-bar"><div class="qi-prog-fill" style="width:50%;animation:shim 1.5s linear infinite;background-size:200%"></div></div>
+      <div class="qi-prog-txt">Sedang diproses...</div>
+    </div>`;
+  }
+
+  // Per-point list (batch running)
+  let ptsHtml = '';
+  if (isBatch && j.points && j.points.length) {
+    ptsHtml = `<div class="qi-pts">` +
+      j.points.map(p => {
+        const pc = STATUS_COL[p.status]||'var(--text3)';
+        const pl = STATUS_LABEL[p.status]||p.status;
+        return `<div class="qi-pt">
+          <span class="qi-pt-name">${p.name}</span>
+          <span class="qi-pt-stat" style="color:${pc}">${pl}</span>
+          ${p.fix_ratio ? `<span style="font-family:var(--mono);font-size:10px;color:var(--text3)">${p.fix_ratio}%</span>` : ''}
+        </div>`;
+      }).join('') + `</div>`;
+  }
+
+  // Error
+  const errHtml = isError && j.error
+    ? `<div class="qi-error">✕ ${j.error}</div>` : '';
+
+  // Actions
+  let actHtml = '<div class="qi-actions">';
+  if (isDone) {
+    const bid = isBatch ? j.batch_id : null;
+    const jid = isBatch ? null : j.id;
+    actHtml += `<button class="qi-btn primary" onclick="${isBatch?`showBatchFromQueue('${bid}')`:`showJobFromQueue('${jid}')`}">
+      📊 Show Result
+    </button>`;
+    if (isBatch) {
+      if (j.csv_ready||j.csv_file) actHtml += `<a class="qi-dl-btn" href="/batch/download/${bid}/csv">CSV</a>`;
+      if (j.shp_ready||j.shp_file) actHtml += `<a class="qi-dl-btn" href="/batch/download/${bid}/shp">SHP</a>`;
+      if (j.pdf_ready||j.pdf_file) actHtml += `<a class="qi-dl-btn" href="/batch/download/${bid}/pdf">PDF</a>`;
+      if (j.zip_ready||j.zip_file) actHtml += `<a class="qi-dl-btn" href="/batch/download/${bid}/zip">ZIP</a>`;
+    } else {
+      if (j.result_file) actHtml += `<a class="qi-dl-btn" href="/download/${jid}">.POS</a>`;
+      actHtml += `<a class="qi-dl-btn" href="/report/${jid}">PDF</a>`;
+      actHtml += `<a class="qi-dl-btn" href="/config/${jid}">Config</a>`;
+    }
+  }
+  actHtml += '</div>';
+
+  const id = isBatch ? `bq-${j.batch_id}` : `jq-${j.id}`;
+
+  return `<div class="queue-item st-${j.status}" id="${id}">
+    <div class="qi-top">
+      <span class="qi-id">${isBatch?'BATCH #'+j.batch_id:'#'+j.id}</span>
+      <span class="qi-name" title="${name}">${name}</span>
+      <span class="qi-badge ${badgeClass(j.status)}">${label}</span>
+      <span class="qi-age">${j.age_str||''}</span>
+    </div>
+    ${errHtml}${progHtml}${ptsHtml}${actHtml}
+  </div>`;
+}
+
+// ── Poll & render queue ────────────────────────────────────────────────────
+async function refreshQueue() {
+  try {
+    const [jobsRes, batchRes] = await Promise.all([
+      fetchRetry('/jobs/active', {}, 2, 500),
+      fetchRetry('/jobs/batch_list', {}, 2, 500)
+    ]);
+    const jobs   = await jobsRes.json();
+    const batches= await batchRes.json();
+
+    // Update in-flight job statuses
+    for (const j of jobs) {
+      if (curId === j.id && ['done','demo'].includes(j.status) && !crsLoaded) {
+        // Auto-show result if this was our active job
+        if (document.getElementById('results-empty')?.style.display !== 'none') {
+          // Only if we haven't shown result yet
+        }
+      }
+    }
+
+    // Render queue
+    const all = [
+      ...batches.filter(b => is_recent_js(b.created_at, 24))
+                .map(b => ({...b, _isBatch:true})),
+      ...jobs.map(j => ({...j, _isBatch:false}))
+    ].sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+
+    const list = document.getElementById('queue-list');
+    const badge = document.getElementById('queue-badge');
+
+    if (!all.length) {
+      list.innerHTML = '<div class="queue-empty">Belum ada job aktif.</div>';
+      badge.textContent = '0';
+      return;
+    }
+
+    badge.textContent = all.length;
+    document.getElementById('nbQueue').textContent = all.length;
+
+    // Update existing items or render new
+    let html = '';
+    for (const item of all) {
+      html += renderQueueItem(item, item._isBatch);
+    }
+    list.innerHTML = html;
+
+    // Update history badge
+    document.getElementById('nbHist').textContent =
+      jobs.filter(j => !is_recent_js(j.created_at, 24)).length +
+      batches.filter(b => !is_recent_js(b.created_at, 24)).length;
+
+  } catch(e) { console.warn('Queue refresh error:', e); }
+}
+
+function is_recent_js(created_at, hours) {
+  try {
+    const dt = new Date(created_at);
+    return (Date.now() - dt.getTime()) < hours * 3600 * 1000;
+  } catch(e) { return true; }
+}
+
+// Start queue polling setiap 3 detik
+function startQueuePolling() {
+  if (queuePollTimer) return;
+  refreshQueue();
+  queuePollTimer = setInterval(refreshQueue, 3000);
+}
+
+// ── Show result from queue ─────────────────────────────────────────────────
+async function showJobFromQueue(jid) {
+  try {
+    const res = await fetch('/status/' + jid);
+    const job = await res.json();
+    curId = jid;
+    crsLoaded = false; crsData = [];
+    showSingleResult(job);
+  } catch(e) { alert('Gagal load result: ' + e.message); }
+}
+
+async function showBatchFromQueue(bid) {
+  try {
+    const res = await fetch('/batch/status/' + bid);
+    const bst = await res.json();
+    curBatchId = bid;
+    showBatchResult(bst);
+  } catch(e) { alert('Gagal load batch result: ' + e.message); }
+}
+
+// ── Override go() untuk trigger queue refresh ─────────────────────────────
+const _origGo = go;
+
+// ── History (now shows >24h jobs) ─────────────────────────────────────────
+
+// ── History ──────────────────────────────────────────────────────────────────
+async function updateHist() {
+  try {
+    const [jh, bl] = await Promise.all([
+      fetch('/jobs').then(r=>r.json()),
+      fetch('/jobs/batch_list').then(r=>r.json()),
+    ]);
+    // History = semua job, diurutkan terbaru dulu
+    const hist = [
+      ...jh.map(x=>({
+        id: '#'+x.id, type:'single',
+        pts: x.rover||'1 titik',
+        status: x.status, time: x.created_at,
+        age: x.age_str||'', is_recent: x.is_recent,
+        jid: x.id
+      })),
+      ...bl.map(x=>({
+        id: 'BATCH #'+x.batch_id, type:'batch',
+        pts: (x.n_points||'?')+' titik',
+        status: x.status, time: x.created_at,
+        age: '', is_recent: is_recent_js(x.created_at, 24),
+        bid: x.batch_id
+      })),
+    ].sort((a,b)=>(b.time||'').localeCompare(a.time||''));
+
+    const histOnly  = hist.filter(x => !x.is_recent);
+    const total     = histOnly.length;
+    document.getElementById('nbHist').textContent = total;
+
+    if (!hist.length) {
+      document.getElementById('histlist').innerHTML =
+        '<div class="empty-state"><div class="empty-icon">🕐</div>' +
+        '<div class="empty-title">Belum ada history</div>' +
+        '<div class="empty-sub">Job >24 jam akan muncul di sini.</div></div>';
+      return;
+    }
+
+    document.getElementById('histlist').innerHTML = hist.map(x => {
+      const clickFn = x.jid ? `showJobFromQueue('${x.jid}')` :
+                      x.bid ? `showBatchFromQueue('${x.bid}')` : '';
+      return `<div class="job-row" onclick="${clickFn}" style="${clickFn?'cursor:pointer':''}">
+        <span class="job-id">${x.id}</span>
+        <span class="job-pts" style="font-size:10px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.pts}</span>
+        <span class="jbdg ${badgeClass(x.status)}">${STATUS_LABEL[x.status]||x.status}</span>
+        <span class="job-time">${x.age||x.time.substring(11,19)}</span>
+        ${x.is_recent?'<span style="font-family:var(--mono);font-size:9px;color:var(--accent-l);margin-left:4px">active</span>':''}
+      </div>`;
+    }).join('');
+  } catch(e){ console.warn('History error:', e); }
+}
+
+// ECEF → Geographic (WGS-84) untuk auto-fill koordinat base
+function ecefToLlh(x, y, z) {
+  const a  = 6378137.0, f = 1/298.257223563;
+  const e2 = 2*f - f*f, b = a*(1-f);
+  const lon = Math.atan2(y, x);
+  let lat = Math.atan2(z, Math.sqrt(x*x+y*y));
+  for (let i=0; i<10; i++) {
+    const N   = a / Math.sqrt(1 - e2*Math.sin(lat)**2);
+    const lat2= Math.atan2(z + e2*N*Math.sin(lat), Math.sqrt(x*x+y*y));
+    if (Math.abs(lat2-lat) < 1e-12) { lat=lat2; break; }
+    lat = lat2;
+  }
+  const N = a / Math.sqrt(1 - e2*Math.sin(lat)**2);
+  const h = Math.sqrt(x*x+y*y)/Math.cos(lat) - N;
+  return {
+    lat: lat * 180/Math.PI,
+    lon: lon * 180/Math.PI,
+    h:   h
+  };
+}
+
+// Auto-fill koordinat + antena base dari RINEX header
+async function autoFillBase(file) {
+  // Browser parse dulu
+  let meta = await parseRinexHeader(file);
+  if (!meta || (!meta.antHeight && !meta.approxPos)) {
+    meta = await parseRinexHeaderServer(file);
+  }
+  if (!meta) return;
+
+  // Koordinat base dari APPROX POSITION XYZ
+  if (meta.approxPos) {
+    try {
+      const llh = ecefToLlh(meta.approxPos.x, meta.approxPos.y, meta.approxPos.z);
+      // Hanya isi jika koordinat masuk akal (tidak 0,0,0)
+      const dist = Math.sqrt(meta.approxPos.x**2+meta.approxPos.y**2+meta.approxPos.z**2);
+      if (dist > 1000) {
+        const blatEl = document.getElementById('blat');
+        const blonEl = document.getElementById('blon');
+        const bhtEl  = document.getElementById('bht');
+        if (blatEl && !blatEl.value) {
+          blatEl.value = llh.lat.toFixed(8);
+          blatEl.style.borderColor = 'var(--success)';
+          blatEl.title = 'Auto dari APPROX POSITION XYZ header RINEX base';
+        }
+        if (blonEl && !blonEl.value) {
+          blonEl.value = llh.lon.toFixed(8);
+          blonEl.style.borderColor = 'var(--success)';
+        }
+        if (bhtEl && !bhtEl.value) {
+          bhtEl.value  = llh.h.toFixed(4);
+          bhtEl.style.borderColor = 'var(--success)';
+        }
+      }
+    } catch(e) {}
+  }
+
+  // Tinggi antena base
+  if (meta.antHeight) {
+    const antBaseEl = document.getElementById('ant-base');
+    if (antBaseEl && !antBaseEl.value) {
+      antBaseEl.value = meta.antHeight;
+      antBaseEl.style.borderColor = 'var(--success)';
+      antBaseEl.title = 'Auto dari ANTENNA: DELTA H/E/N header RINEX base'
+        + (meta.antType ? ' · ' + meta.antType : '');
+    }
+  }
+
+  // Update notice
+  const notice = document.getElementById('base-coord-notice');
+  if (notice && meta.approxPos) {
+    notice.textContent = '✓ Koordinat base diisi otomatis dari header RINEX. Override manual jika diperlukan.';
+    notice.className = 'notice info';
+  }
+}
+
+</script>
+</body>
+</html>

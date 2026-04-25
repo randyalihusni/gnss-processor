@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  gnss-processor:
+    image: gnss-processor:latest        # image yang sudah di-build di Step 3
+    container_name: gnss_processor
+    restart: unless-stopped
+    volumes:
+      - gnss_uploads:/app/uploads
+      - gnss_results:/app/results
+    environment:
+      - FLASK_ENV=production
+      - TZ=Asia/Jakarta
+    networks:
+      - npm_net
+
+volumes:
+  gnss_uploads:
+    name: gnss_uploads
+  gnss_results:
+    name: gnss_results
+
+networks:
+  npm_net:
+    external: true
+    name: npm_default                   # GANTI dengan nama network NPM Randy
