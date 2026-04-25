@@ -791,8 +791,7 @@ def upload_chunk():
         state = {'filename': filename, 'total_chunks': total_chunks,
                  'file_type': file_type, 'token': token}
     # Update memory dict jika ada (opsional, untuk backward compat)
-    if upload_id in _chunk_uploads:
-        del _chunk_uploads[upload_id]
+    _chunk_uploads.pop(upload_id, None)  # safe delete
     if file_type == 'rover':
         dest_token = str(__import__('uuid').uuid4())[:8]
         dest_dir   = os.path.join(app.config['UPLOAD_FOLDER'], f'pre_{dest_token}')
