@@ -1036,9 +1036,16 @@ async function uploadChunkWithRetry(fd, retries) {
   for (var i = 0; i <= retries; i++) {
     try {
       var res = await fetch('/upload/chunk', { method: 'POST', body: fd });
-      if (res.ok) return await res.json();
-      throw new Error('HTTP ' + res.status);
+      if (res.ok) {
+        var data = await res.json();
+        return data;
+      }
+      // Log error detail
+      var txt = await res.text();
+      console.error('Chunk upload error', res.status, txt.substring(0,200));
+      throw new Error('HTTP ' + res.status + ': ' + txt.substring(0,100));
     } catch(e) {
+      console.warn('Chunk attempt', i+1, 'failed:', e.message);
       if (i === retries) throw e;
       await new Promise(function(r){ setTimeout(r, 1000 * (i + 1)); });
     }
@@ -1112,62 +1119,58 @@ async function uploadAllRovers() {
   updateProcessBtn();
 }
 
-async function uploadOneRover(file, idx) {
-  return new Promise(async function(resolve) {
-    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const uploadId = Math.random().toString(36).slice(2) + Date.now();
-    let lastResult = null;
+async async function uploadOneRover(file, idx) {
+  const CHUNK_SIZE  = 2 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const uploadId    = Math.random().toString(36).slice(2) + Date.now();
 
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const end   = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = file.slice(start, end);
+  console.log('[uploadOneRover]', file.name, 'size:', file.size, 'chunks:', totalChunks);
 
-      const fd = new FormData();
-      fd.append('upload_id',    uploadId);
-      fd.append('chunk_index',  i);
-      fd.append('total_chunks', totalChunks);
-      fd.append('filename',     file.name);
-      fd.append('file_type',    'rover');
-      fd.append('chunk',        chunk, file.name);
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end   = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
 
-      try {
-        const data = await uploadChunkWithRetry(fd);
-        lastResult = data;
+    const fd = new FormData();
+    fd.append('upload_id',    uploadId);
+    fd.append('chunk_index',  i);
+    fd.append('total_chunks', totalChunks);
+    fd.append('filename',     file.name);
+    fd.append('file_type',    'rover');
+    fd.append('chunk',        chunk, file.name);
 
-        // Update progress bar
-        const pct = Math.round((i + 1) / totalChunks * 100);
-        updateFileProgress(idx, pct);
+    try {
+      const data = await uploadChunkWithRetry(fd);
+      console.log('[chunk]', i+1, '/', totalChunks, 'done:', data.done);
 
-        if (data.done) {
-          fileTokens[idx] = data.token;
-          if (data.ant_height && !antParsed[idx]) {
-            antHeights[idx] = data.ant_height;
-            antParsed[idx]  = true;
-          }
-          var items = obsFiles.map(function(f, ii) {
-            return {
-              name: f.name,
-              status: fileTokens[ii] ? 'done' : (ii === idx ? 'done' : 'uploading'),
-              progress: fileTokens[ii] ? 100 : (ii === idx ? 100 : 0),
-              ant_height: antHeights[ii] || ''
-            };
-          });
-          renderFileList(items);
-          autoFillAntenna(file, idx);
-          resolve();
-          return;
+      const pct = Math.round((i + 1) / totalChunks * 100);
+      updateFileProgress(idx, pct);
+
+      if (data.done) {
+        fileTokens[idx] = data.token;
+        if (data.ant_height && !antParsed[idx]) {
+          antHeights[idx] = data.ant_height;
+          antParsed[idx]  = true;
         }
-      } catch(e) {
-        updateFileProgress(idx, 0, 'error');
-        showToast('Upload gagal chunk ' + i + ': ' + file.name, 'err');
-        resolve();
+        const items = obsFiles.map(function(f, ii) {
+          return {
+            name:       f.name,
+            status:     fileTokens[ii] ? 'done' : (ii === idx ? 'done' : 'uploading'),
+            progress:   fileTokens[ii] ? 100 : (ii === idx ? 100 : 0),
+            ant_height: antHeights[ii] || ''
+          };
+        });
+        renderFileList(items);
+        autoFillAntenna(file, idx);
         return;
       }
+    } catch(e) {
+      console.error('[uploadOneRover] chunk', i, 'error:', e.message);
+      updateFileProgress(idx, 0, 'error');
+      showToast('Upload gagal: ' + file.name + ' (chunk ' + i + ')', 'err');
+      return;
     }
-    resolve();
-  });
+  }
 }
 
 function updateFileProgress(idx, pct, status) {
