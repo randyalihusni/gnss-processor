@@ -1088,6 +1088,7 @@ function setEph(mode) {
 
 // ── Multi-file upload ───────────────────────────────────────────────────────
 let obsFiles = [];
+var crsLoaded = false, crsData = [], crsActive = 'all';
 // Per-file state
 var antHeights  = {};
 var antTypes    = {};
@@ -1865,7 +1866,7 @@ function resetBtn() {
 }
 
 // ── CRS ─────────────────────────────────────────────────────────────────────
-let crsLoaded=false, crsData=[], crsActive='all';
+// crsLoaded declared at top
 const CRS_PRIORITY=[4326,9470,32749,23830];
 function crsCat(s){return s.startsWith('UTM')?'utm':s.startsWith('TM3')?'tm3':s.startsWith('ECEF')?'ecef':'geo';}
 
