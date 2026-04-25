@@ -813,7 +813,7 @@ def upload_chunk():
     # Bersihkan chunks
     import shutil
     shutil.rmtree(chunk_dir, ignore_errors=True)
-    del _chunk_uploads[upload_id]
+    _chunk_uploads.pop(upload_id, None)  # safe delete
 
     result = {'done': True, 'filename': filename, 'size': os.path.getsize(final_path)}
 
