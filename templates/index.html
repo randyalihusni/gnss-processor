@@ -518,10 +518,29 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
     <!-- ══ PAGE: Processing ══ -->
     <div class="page active" id="page-processing">
 
-      <!-- File Upload -->
+      <!-- Mode Positioning — paling atas, menentukan input yang diperlukan -->
       <div class="card">
         <div class="card-header">
           <span class="card-num">01</span>
+          <span class="card-title">Mode Positioning</span>
+        </div>
+        <div class="card-body" style="padding:14px 18px">
+          <div class="fg" style="margin-bottom:0">
+            <div class="flbl">Mode <span class="req">required</span></div>
+            <select id="mode" onchange="onModeChange()">
+              {% for key, label in modes.items() %}
+              <option value="{{ key }}" {% if key=='static' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <div class="tip" id="mode-tip">Mode <b>Static / Kinematic / DGPS</b> memerlukan file Base Station OBS dan Navigation.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Upload -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-num">02</span>
           <span class="card-title">Input Files</span>
         </div>
         <div class="card-body">
@@ -542,38 +561,52 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
           </div>
 
           <!-- Base OBS -->
-          <div class="fg">
-            <div class="flbl">Base Station OBS <span class="opt">· opsional</span></div>
-            <div class="dz" id="dz-base">
-              <input type="file" id="f-base" accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o">
-              <div class="dz-icon">🏁</div>
-              <div class="dz-info">
-                <div class="dz-label">Base station observation file</div>
-                <div class="dz-filename" id="fn-base">Opsional — untuk baseline Static / Kinematic</div>
+          <div class="fg" id="base-section">
+            <div class="flbl">Base Station OBS <span id="base-req-badge" class="opt">· opsional</span></div>
+            <!-- Drop zone + inline delete -->
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="dz" id="dz-base" style="flex:1;min-width:0">
+                <input type="file" id="f-base" accept=".obs,.rnx,.o,.21o,.22o,.23o,.24o,.25o,.26o" onchange="handleBaseChange(this)">
+                <div class="dz-icon" id="dzico-base">🏁</div>
+                <div class="dz-info">
+                  <div class="dz-label">Base station observation file</div>
+                  <div class="dz-filename" id="fn-base">Opsional — untuk Static / Kinematic / DGPS</div>
+                </div>
+                <span class="dz-badge">BASE</span>
               </div>
-              <span class="dz-badge">BASE</span>
+              <button id="base-del-btn" onclick="removeBase()" title="Hapus file base"
+                style="display:none;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:6px 10px;font-size:14px;line-height:1;flex-shrink:0;transition:all .15s"
+                onmouseover="this.style.borderColor='var(--error)';this.style.color='var(--error)'"
+                onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">×</button>
             </div>
-            <div class="base-up-wrap" id="base-up-wrap">
-              <div class="base-up-info">
-                <span id="base-up-label">Mengupload base...</span>
-                <span id="base-up-pct">0%</span>
+            <!-- Compact 1-line progress bar (hidden until uploading) -->
+            <div id="base-up-wrap" class="base-up-wrap" style="display:none;margin-top:6px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="base-up-bar" style="flex:1"><div class="base-up-fill" id="base-up-fill"></div></div>
+                <span id="base-up-pct" style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:34px;text-align:right">0%</span>
+                <span id="base-up-label" style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis"></span>
               </div>
-              <div class="base-up-bar"><div class="base-up-fill" id="base-up-fill"></div></div>
+            </div>
+            <!-- Baseline info — tampil setelah base selesai upload & rover ada koordinat -->
+            <div id="baseline-info" style="display:none;margin-top:8px;background:var(--surf2);border:1px solid var(--border2);border-radius:6px;padding:7px 12px;display:flex;align-items:center;gap:8px">
+              <span style="font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.5px">BASELINE</span>
+              <span id="baseline-val" style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent-l)">—</span>
+              <span id="baseline-unit" style="font-family:var(--mono);font-size:10px;color:var(--text3)">km</span>
             </div>
           </div>
 
           <!-- Base coordinates -->
-          <div class="fg">
+          <div class="fg" id="base-coord-section">
             <div class="flbl">Koordinat Base Station <span class="opt">· opsional, jika diketahui</span></div>
             <div class="notice" id="base-coord-notice">Isi koordinat base jika diketahui. Jika kosong, RTKLIB pakai koordinat dari header RINEX base.</div>
             <div class="three" style="margin-bottom:8px">
               <div>
                 <div class="flbl">Latitude (°)</div>
-                <input class="ti" type="number" id="blat" placeholder="-7.16654321" step="0.00000001" min="-90" max="90" oninput="this.style.borderColor=''" title="Auto dari header RINEX base jika tersedia">
+                <input class="ti" type="number" id="blat" placeholder="-7.16654321" step="0.00000001" min="-90" max="90" oninput="this.style.borderColor='';computeBaseline()" title="Auto dari header RINEX base jika tersedia">
               </div>
               <div>
                 <div class="flbl">Longitude (°)</div>
-                <input class="ti" type="number" id="blon" placeholder="112.65087654" step="0.00000001" min="-180" max="180" oninput="this.style.borderColor=''">
+                <input class="ti" type="number" id="blon" placeholder="112.65087654" step="0.00000001" min="-180" max="180" oninput="this.style.borderColor='';computeBaseline()">
               </div>
               <div>
                 <div class="flbl">Height (m)</div>
@@ -582,10 +615,27 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
             </div>
           </div>
 
-          <!-- Antenna height base only -->
-          <div class="fg">
-            <div class="flbl">Tinggi Antena Base (m) <span class="opt">· vertikal</span></div>
-            <input class="ti" type="number" id="ant-base" placeholder="0.000" step="0.001" min="0" style="max-width:200px" oninput="this.style.borderColor=''" title="Auto dari header RINEX base jika tersedia">
+          <!-- Antenna Base — type + reference + height -->
+          <div class="fg" id="ant-base-section">
+            <div class="flbl">Antena Base Station</div>
+            <div class="three">
+              <div>
+                <div class="flbl" style="font-size:10px">Tipe Antena</div>
+                <input class="ti" type="text" id="ant-type-base" placeholder="LEIAR25.R3 LEIT" style="font-family:var(--mono);font-size:11px" title="Auto dari ANT # / TYPE header RINEX">
+              </div>
+              <div>
+                <div class="flbl" style="font-size:10px">Referensi Tinggi</div>
+                <select id="ant-ref-base">
+                  <option value="0">Bottom of Antenna</option>
+                  <option value="1">Phase Center (L1)</option>
+                  <option value="2">Slant Height</option>
+                </select>
+              </div>
+              <div>
+                <div class="flbl" style="font-size:10px">Tinggi (m)</div>
+                <input class="ti" type="number" id="ant-base" placeholder="0.000" step="0.001" min="0" oninput="this.style.borderColor=''" title="Auto dari header RINEX base jika tersedia">
+              </div>
+            </div>
           </div>
 
         </div>
@@ -594,7 +644,7 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
       <!-- Ephemeris -->
       <div class="card">
         <div class="card-header">
-          <span class="card-num">02</span>
+          <span class="card-num">03</span>
           <span class="card-title">Ephemeris</span>
         </div>
         <div class="card-body">
@@ -629,26 +679,52 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
           <div class="eph-upload-area" id="eph-manual-opts">
             <div class="fg">
               <div class="flbl">Navigation File <span class="req">required</span></div>
-              <div class="dz" id="dz-nav">
-                <input type="file" id="f-nav" accept=".nav,.rnx,.n,.21n,.22n,.23n,.24n,.25n,.26n,.p">
-                <div class="dz-icon">🛰️</div>
-                <div class="dz-info">
-                  <div class="dz-label">Navigation / ephemeris file</div>
-                  <div class="dz-filename" id="fn-nav">Drop file atau klik untuk pilih</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="dz" id="dz-nav" style="flex:1;min-width:0">
+                  <input type="file" id="f-nav" accept=".nav,.rnx,.n,.21n,.22n,.23n,.24n,.25n,.26n,.p" onchange="handleEphChange(this,'nav')">
+                  <div class="dz-icon" id="dzico-nav">🛰️</div>
+                  <div class="dz-info">
+                    <div class="dz-label">Navigation / ephemeris file</div>
+                    <div class="dz-filename" id="fn-nav">Drop file atau klik untuk pilih</div>
+                  </div>
+                  <span class="dz-badge">NAV</span>
                 </div>
-                <span class="dz-badge">NAV</span>
+                <button id="nav-del-btn" onclick="removeEph('nav')" title="Hapus file NAV"
+                  style="display:none;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:6px 10px;font-size:14px;line-height:1;flex-shrink:0;transition:all .15s"
+                  onmouseover="this.style.borderColor='var(--error)';this.style.color='var(--error)'"
+                  onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">×</button>
+              </div>
+              <div id="nav-up-wrap" style="display:none;margin-top:6px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden"><div id="nav-up-fill" style="height:100%;border-radius:2px;background:var(--accent-l);transition:width .2s;width:0%"></div></div>
+                  <span id="nav-up-pct" style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:34px;text-align:right">0%</span>
+                  <span id="nav-up-label" style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap"></span>
+                </div>
               </div>
             </div>
             <div class="fg">
               <div class="flbl">SP3 Precise Orbit <span class="opt">· opsional</span></div>
-              <div class="dz" id="dz-sp3">
-                <input type="file" id="f-sp3" accept=".sp3,.SP3">
-                <div class="dz-icon">🌐</div>
-                <div class="dz-info">
-                  <div class="dz-label">Precise satellite orbit (SP3)</div>
-                  <div class="dz-filename" id="fn-sp3">Opsional — untuk PPP</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="dz" id="dz-sp3" style="flex:1;min-width:0">
+                  <input type="file" id="f-sp3" accept=".sp3,.SP3" onchange="handleEphChange(this,'sp3')">
+                  <div class="dz-icon" id="dzico-sp3">🌐</div>
+                  <div class="dz-info">
+                    <div class="dz-label">Precise satellite orbit (SP3)</div>
+                    <div class="dz-filename" id="fn-sp3">Opsional — untuk PPP</div>
+                  </div>
+                  <span class="dz-badge">SP3</span>
                 </div>
-                <span class="dz-badge">SP3</span>
+                <button id="sp3-del-btn" onclick="removeEph('sp3')" title="Hapus file SP3"
+                  style="display:none;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text3);cursor:pointer;padding:6px 10px;font-size:14px;line-height:1;flex-shrink:0;transition:all .15s"
+                  onmouseover="this.style.borderColor='var(--error)';this.style.color='var(--error)'"
+                  onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">×</button>
+              </div>
+              <div id="sp3-up-wrap" style="display:none;margin-top:6px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="flex:1;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden"><div id="sp3-up-fill" style="height:100%;border-radius:2px;background:var(--accent-l);transition:width .2s;width:0%"></div></div>
+                  <span id="sp3-up-pct" style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:34px;text-align:right">0%</span>
+                  <span id="sp3-up-label" style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -659,7 +735,7 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
       <!-- Parameters -->
       <div class="card">
         <div class="card-header">
-          <span class="card-num">03</span>
+          <span class="card-num">04</span>
           <span class="card-title">Parameters</span>
         </div>
         <div class="card-body">
@@ -671,14 +747,6 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
 
           <!-- BASIC -->
           <div class="tpane on" id="tp-basic">
-            <div class="fg">
-              <div class="flbl">Mode Positioning</div>
-              <select id="mode">
-                {% for key, label in modes.items() %}
-                <option value="{{ key }}" {% if key=='static' %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </div>
             <div class="fg">
               <div class="flbl">Elevation Mask</div>
               <div class="srow">
@@ -1327,12 +1395,22 @@ async function autoFillAntenna(file, idx) {
   }
   if (meta.antType) antTypes[idx] = meta.antType;
   antParsed[idx] = true;
+  // Store rover approxPos for baseline (use first rover file)
+  if (idx === 0 && meta.approxPos) {
+    var llh = ecefToLlh(meta.approxPos.x, meta.approxPos.y, meta.approxPos.z);
+    roverApproxPos = llh;
+    computeBaseline();
+  }
   // Update DOM input jika sudah render
   const inp = document.getElementById('ant-inp-' + idx);
   if (inp && meta.antHeight) {
     inp.value = meta.antHeight;
     inp.style.borderColor = 'var(--success)';
     inp.title = 'Auto dari header RINEX' + (meta.antType ? ' · ' + meta.antType : '');
+  }
+  const antTypeInp = document.getElementById('ant-type-' + idx);
+  if (antTypeInp && meta.antType && !antTypeInp.value) {
+    antTypeInp.value = meta.antType;
   }
 }
 
@@ -1368,13 +1446,22 @@ function renderFileList(items) {
     // Antenna input — tampil saat done
     var antEl = '';
     if (isDone) {
-      antEl = '<div class="fi-ant-wrap">'
+      var antTypeVal = antTypes[i] || '';
+      antEl = '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
         + '<span class="fi-ant-lbl">h</span>'
         + '<input class="fi-ant-inp" id="ant-inp-'+i+'" type="number" min="0" step="0.001"'
         + ' placeholder="1.800" value="'+antVal+'"'
         + ' oninput="setAntHeight('+i+', this.value)"'
-        + ' title="Tinggi antena rover (m)">'
+        + ' title="Tinggi antena rover (m)" style="width:60px">'
         + '<span class="fi-ant-lbl">m</span>'
+        + '<select id="ant-ref-'+i+'" title="Referensi pengukuran tinggi" style="font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 5px;cursor:pointer;width:112px">'
+        + '<option value="0">Bot. of Antenna</option>'
+        + '<option value="1">Phase Ctr (L1)</option>'
+        + '<option value="2">Slant Height</option>'
+        + '</select>'
+        + '<input id="ant-type-'+i+'" type="text" placeholder="Tipe antena" value="'+antTypeVal+'"'
+        + ' title="Tipe antena (dari RINEX header)" oninput="antTypes['+i+']=this.value"'
+        + ' style="font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 6px;width:110px">'
         + '</div>';
     }
 
@@ -1394,33 +1481,42 @@ function renderFileList(items) {
   updateProcessBtn();
 }
 
-// ── Single file drop zones (base, nav, sp3) ─────────────────────────────────
-function handleBaseChange(input) {
-  if (!input.files[0]) return;
-  var file = input.files[0];
-  document.getElementById('fn-base').textContent = file.name;
-  document.getElementById('dz-base').classList.add('has-file');
-  document.getElementById('dzico-base').textContent = '✓';
-  uploadBase(file);
+// ── Mode change — show/hide base section ────────────────────────────────────
+var BASE_MODES = ['kinematic','static','dgps'];
+var modeTips = {
+  'single':       'Mode <b>Single Point</b> — hanya perlu file Rover OBS + Nav. Akurasi meter.',
+  'dgps':         'Mode <b>DGPS</b> — perlu Base Station OBS untuk koreksi diferensial. Akurasi sub-meter.',
+  'kinematic':    'Mode <b>Kinematic</b> — perlu Base Station OBS. Rover bergerak, akurasi cm.',
+  'static':       'Mode <b>Static</b> — perlu Base Station OBS. Rover diam, akurasi mm-cm.',
+  'ppp-static':   'Mode <b>PPP-Static</b> — tidak perlu base, gunakan precise ephemeris (SP3). Akurasi cm.',
+  'ppp-kinematic':'Mode <b>PPP-Kinematic</b> — tidak perlu base, gunakan precise ephemeris (SP3). Akurasi dm-cm.',
+};
+function onModeChange() {
+  var mode = document.getElementById('mode').value;
+  var needBase = BASE_MODES.includes(mode);
+  // Show/hide base section
+  ['base-section','base-coord-section','ant-base-section'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = needBase ? '' : 'none';
+  });
+  // Update badge
+  var badge = document.getElementById('base-req-badge');
+  if (badge) {
+    badge.textContent = needBase ? '· diperlukan' : '· opsional';
+    badge.className   = needBase ? 'req' : 'opt';
+  }
+  // Update tip
+  var tip = document.getElementById('mode-tip');
+  if (tip) tip.innerHTML = modeTips[mode] || '';
 }
+// Run once on load
+onModeChange();
 
-['base','nav','sp3'].forEach(function(n) {
+// ── Single file drop zones (nav, sp3) — drag/drop ───────────────────────────
+['nav','sp3'].forEach(function(n) {
   var dz  = document.getElementById('dz-'+n);
   var inp = document.getElementById('f-'+n);
-  var fn  = document.getElementById('fn-'+n);
   if (!dz || !inp) return;
-
-  function onFileSet(file) {
-    fn.textContent = file.name;
-    dz.classList.add('has-file');
-    var ico = dz.querySelector('.dz-icon');
-    if (ico) ico.textContent = '✓';
-    if (n === 'base') {
-      uploadBase(file);
-    }
-  }
-
-  inp.addEventListener('change', function() { if (inp.files[0]) onFileSet(inp.files[0]); });
   dz.addEventListener('dragover',  function(e) { e.preventDefault(); dz.classList.add('ov'); });
   dz.addEventListener('dragleave', function() { dz.classList.remove('ov'); });
   dz.addEventListener('drop', function(e) {
@@ -1428,10 +1524,167 @@ function handleBaseChange(input) {
     if (e.dataTransfer.files[0]) {
       var dt = new DataTransfer(); dt.items.add(e.dataTransfer.files[0]);
       inp.files = dt.files;
-      onFileSet(e.dataTransfer.files[0]);
+      handleEphChange(inp, n);
     }
   });
 });
+
+// ── Base drop zone drag/drop ─────────────────────────────────────────────────
+(function() {
+  var dz  = document.getElementById('dz-base');
+  var inp = document.getElementById('f-base');
+  if (!dz || !inp) return;
+  dz.addEventListener('dragover',  function(e) { e.preventDefault(); dz.classList.add('ov'); });
+  dz.addEventListener('dragleave', function() { dz.classList.remove('ov'); });
+  dz.addEventListener('drop', function(e) {
+    e.preventDefault(); dz.classList.remove('ov');
+    if (e.dataTransfer.files[0]) {
+      var dt = new DataTransfer(); dt.items.add(e.dataTransfer.files[0]);
+      inp.files = dt.files;
+      handleBaseChange(inp);
+    }
+  });
+})();
+
+// ── Remove base ──────────────────────────────────────────────────────────────
+function removeBase() {
+  baseUpPath = '';
+  document.getElementById('f-base').value = '';
+  document.getElementById('fn-base').textContent = 'Opsional — untuk Static / Kinematic / DGPS';
+  var dz = document.getElementById('dz-base');
+  dz.classList.remove('has-file');
+  document.getElementById('dzico-base').textContent = '🏁';
+  document.getElementById('base-del-btn').style.display = 'none';
+  document.getElementById('base-up-wrap').style.display = 'none';
+  document.getElementById('baseline-info').style.display = 'none';
+  // Clear base coords
+  ['blat','blon','bht','ant-base','ant-type-base'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { el.value = ''; el.style.borderColor = ''; }
+  });
+  var notice = document.getElementById('base-coord-notice');
+  if (notice) { notice.textContent = 'Isi koordinat base jika diketahui. Jika kosong, RTKLIB pakai koordinat dari header RINEX base.'; notice.className = 'notice'; }
+}
+
+// ── Ephemeris change handler (with progress + delete) ───────────────────────
+function handleEphChange(input, type) {
+  if (!input.files[0]) return;
+  var file = input.files[0];
+  var dz   = document.getElementById('dz-'+type);
+  var fn   = document.getElementById('fn-'+type);
+  var ico  = document.getElementById('dzico-'+type);
+  var del  = document.getElementById(type+'-del-btn');
+  var wrap = document.getElementById(type+'-up-wrap');
+  var fill = document.getElementById(type+'-up-fill');
+  var pct  = document.getElementById(type+'-up-pct');
+  var lbl  = document.getElementById(type+'-up-label');
+
+  fn.textContent = file.name;
+  dz.classList.add('has-file');
+  // Don't mark green yet — wait for upload done
+
+  // Show progress
+  if (wrap) { wrap.style.display = 'block'; fill.style.width = '0%'; pct.textContent = '0%'; lbl.textContent = 'Mengupload...'; }
+
+  // Chunk upload
+  var CHUNK = 2*1024*1024, total = Math.ceil(file.size/CHUNK);
+  var uid = Math.random().toString(36).slice(2)+Date.now();
+  (async function() {
+    try {
+      for (var i=0; i<total; i++) {
+        var fd = new FormData();
+        fd.append('upload_id',    uid);
+        fd.append('chunk_index',  i);
+        fd.append('total_chunks', total);
+        fd.append('filename',     file.name);
+        fd.append('file_type',    'rover'); // reuse rover endpoint for simple storage
+        fd.append('chunk',        file.slice(i*CHUNK, Math.min((i+1)*CHUNK, file.size)), file.name);
+        var data = await uploadChunkWithRetry(fd);
+        var p = Math.round((i+1)/total*100);
+        if (fill) fill.style.width = p+'%';
+        if (pct)  pct.textContent  = p+'%';
+        if (data.done) {
+          if (ico) ico.textContent = '✓';
+          if (fill) fill.style.background = 'var(--success)';
+          if (lbl)  lbl.textContent = '✓ '+file.name;
+          if (del)  del.style.display = 'block';
+          return;
+        }
+      }
+    } catch(e) {
+      if (lbl) lbl.textContent = '✕ Gagal: '+e.message;
+      if (fill) fill.style.background = 'var(--error)';
+      showToast('Upload '+type.toUpperCase()+' gagal: '+e.message, 'err');
+    }
+  })();
+}
+
+function removeEph(type) {
+  document.getElementById('f-'+type).value = '';
+  document.getElementById('fn-'+type).textContent = type==='nav' ? 'Drop file atau klik untuk pilih' : 'Opsional — untuk PPP';
+  var dz = document.getElementById('dz-'+type);
+  if (dz) dz.classList.remove('has-file');
+  var ico = document.getElementById('dzico-'+type);
+  if (ico) ico.textContent = type==='nav' ? '🛰️' : '🌐';
+  var del = document.getElementById(type+'-del-btn');
+  if (del) del.style.display = 'none';
+  var wrap = document.getElementById(type+'-up-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+// ── Baseline computation ─────────────────────────────────────────────────────
+// Store approxPos from rover RINEX header
+var roverApproxPos = null;  // {lat, lon} in degrees
+
+function computeBaseline() {
+  var blat = parseFloat(document.getElementById('blat').value);
+  var blon = parseFloat(document.getElementById('blon').value);
+  var info = document.getElementById('baseline-info');
+  if (!info) return;
+  // Need rover pos too — use first rover file's approxPos
+  var rlat = roverApproxPos ? roverApproxPos.lat : null;
+  var rlon = roverApproxPos ? roverApproxPos.lon : null;
+  if (!isNaN(blat) && !isNaN(blon) && rlat !== null) {
+    var d = haversineKm(rlat, rlon, blat, blon);
+    document.getElementById('baseline-val').textContent = d < 1 ? (d*1000).toFixed(0) : d.toFixed(3);
+    document.getElementById('baseline-unit').textContent = d < 1 ? 'm' : 'km';
+    info.style.display = 'flex';
+  } else if (!isNaN(blat) && !isNaN(blon)) {
+    // No rover pos yet — hide
+    info.style.display = 'none';
+  }
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  var R = 6371, toR = Math.PI/180;
+  var dLat = (lat2-lat1)*toR, dLon = (lon2-lon1)*toR;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2)
+        + Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── ECEF to LLH (for approxPos from rover header) ───────────────────────────
+function ecefToLlh(x, y, z) {
+  var a=6378137.0, e2=0.00669437999014;
+  var lon = Math.atan2(y, x) * 180/Math.PI;
+  var p = Math.sqrt(x*x+y*y);
+  var lat = Math.atan2(z, p);
+  for (var i=0; i<10; i++) {
+    var N = a/Math.sqrt(1-e2*Math.sin(lat)*Math.sin(lat));
+    var lat2 = Math.atan2(z + e2*N*Math.sin(lat), p);
+    if (Math.abs(lat2-lat)<1e-12) { lat=lat2; break; }
+    lat = lat2;
+  }
+  return { lat: lat*180/Math.PI, lon: lon };
+}
+
+function handleBaseChange(input) {
+  if (!input.files[0]) return;
+  var file = input.files[0];
+  document.getElementById('fn-base').textContent = file.name;
+  // Don't set has-file yet — wait for upload to complete
+  uploadBase(file);
+}
 
 function uploadBase(file) {
   var wrap = document.getElementById('base-up-wrap');
@@ -1443,7 +1696,7 @@ function uploadBase(file) {
   fill.style.width   = '0%';
   fill.style.background = 'var(--accent-l)';
   pct.textContent    = '0%';
-  lbl.textContent    = 'Mengupload ' + file.name + '...';
+  lbl.textContent    = 'Mengupload...';
 
   var CHUNK_SIZE  = 2 * 1024 * 1024;
   var totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -1492,6 +1745,17 @@ function uploadBase(file) {
             notice.textContent = '✓ Koordinat base diisi dari header RINEX. Override jika perlu.';
             notice.className = 'notice info';
           }
+          // Mark dz green ONLY after upload done (fix #2)
+          var dz = document.getElementById('dz-base');
+          if (dz) dz.classList.add('has-file');
+          var ico = document.getElementById('dzico-base');
+          if (ico) ico.textContent = '✓';
+          // Show delete button (fix #4)
+          var del = document.getElementById('base-del-btn');
+          if (del) del.style.display = 'block';
+          lbl.textContent = '✓ ' + file.name;
+          // Compute baseline if rover approxPos known (fix #3)
+          computeBaseline();
           return;
         }
       }
@@ -1533,9 +1797,10 @@ function getParams() {
     out_interval:   '0',
     base_lat:       bl, base_lon: bln, base_ht: bh,
     ant_ht_rover:   '0',  // per-file, handled in processSingle/processBatch
-    ant_ht_rover_type: '0',
+    ant_ht_rover_type: document.getElementById('ant-ref-0') ? (document.getElementById('ant-ref-0').value||'0') : '0',
     ant_ht_base:    document.getElementById('ant-base').value || '0',
-    ant_ht_base_type: '0',
+    ant_ht_base_type: document.getElementById('ant-ref-base') ? (document.getElementById('ant-ref-base').value||'0') : '0',
+    ant_type_base:  document.getElementById('ant-type-base') ? (document.getElementById('ant-type-base').value||'') : '',
   };
 }
 function setStatus(state, txt) {
@@ -2224,27 +2489,6 @@ async function updateHist() {
       </div>`;
     }).join('');
   } catch(e){ console.warn('History error:', e); }
-}
-
-// ECEF → Geographic (WGS-84) untuk auto-fill koordinat base
-function ecefToLlh(x, y, z) {
-  const a  = 6378137.0, f = 1/298.257223563;
-  const e2 = 2*f - f*f, b = a*(1-f);
-  const lon = Math.atan2(y, x);
-  let lat = Math.atan2(z, Math.sqrt(x*x+y*y));
-  for (let i=0; i<10; i++) {
-    const N   = a / Math.sqrt(1 - e2*Math.sin(lat)**2);
-    const lat2= Math.atan2(z + e2*N*Math.sin(lat), Math.sqrt(x*x+y*y));
-    if (Math.abs(lat2-lat) < 1e-12) { lat=lat2; break; }
-    lat = lat2;
-  }
-  const N = a / Math.sqrt(1 - e2*Math.sin(lat)**2);
-  const h = Math.sqrt(x*x+y*y)/Math.cos(lat) - N;
-  return {
-    lat: lat * 180/Math.PI,
-    lon: lon * 180/Math.PI,
-    h:   h
-  };
 }
 
 // Auto-fill koordinat + antena base dari RINEX header
