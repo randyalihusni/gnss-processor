@@ -1447,21 +1447,18 @@ function renderFileList(items) {
     var antEl = '';
     if (isDone) {
       var antTypeVal = antTypes[i] || '';
-      antEl = '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'
+      antEl = '<div class="fi-ant-wrap">'
         + '<span class="fi-ant-lbl">h</span>'
         + '<input class="fi-ant-inp" id="ant-inp-'+i+'" type="number" min="0" step="0.001"'
         + ' placeholder="1.800" value="'+antVal+'"'
         + ' oninput="setAntHeight('+i+', this.value)"'
-        + ' title="Tinggi antena rover (m)" style="width:60px">'
+        + ' title="Tinggi antena rover (m)">'
         + '<span class="fi-ant-lbl">m</span>'
-        + '<select id="ant-ref-'+i+'" title="Referensi pengukuran tinggi" style="font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 5px;cursor:pointer;width:112px">'
-        + '<option value="0">Bot. of Antenna</option>'
-        + '<option value="1">Phase Ctr (L1)</option>'
-        + '<option value="2">Slant Height</option>'
+        + '<select id="ant-ref-'+i+'" title="Referensi tinggi" style="font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 5px;cursor:pointer;max-width:105px">'
+        + '<option value="0">Bot. Antenna</option>'
+        + '<option value="1">Phase Ctr</option>'
+        + '<option value="2">Slant</option>'
         + '</select>'
-        + '<input id="ant-type-'+i+'" type="text" placeholder="Tipe antena" value="'+antTypeVal+'"'
-        + ' title="Tipe antena (dari RINEX header)" oninput="antTypes['+i+']=this.value"'
-        + ' style="font-family:var(--mono);font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 6px;width:110px">'
         + '</div>';
     }
 
