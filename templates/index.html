@@ -1509,8 +1509,8 @@ function onModeChange() {
   var tip = document.getElementById('mode-tip');
   if (tip) tip.innerHTML = modeTips[mode] || '';
 }
-// Run once on load
-onModeChange();
+// Run once on load — after DOM ready
+document.addEventListener('DOMContentLoaded', function() { onModeChange(); });
 
 // ── Single file drop zones (nav, sp3) — drag/drop ───────────────────────────
 ['nav','sp3'].forEach(function(n) {
