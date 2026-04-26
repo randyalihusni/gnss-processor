@@ -528,9 +528,12 @@ hr.dv{border:none;border-top:1px solid var(--border2);margin:14px 0}
           <div class="fg" style="margin-bottom:0">
             <div class="flbl">Mode <span class="req">required</span></div>
             <select id="mode" onchange="onModeChange()">
-              {% for key, label in modes.items() %}
-              <option value="{{ key }}" {% if key=='static' %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
+              <option value="single">Single Point (Code)</option>
+              <option value="dgps">DGPS/DGNSS</option>
+              <option value="kinematic">Kinematic</option>
+              <option value="static" selected>Static</option>
+              <option value="ppp-kinematic">PPP-Kinematic</option>
+              <option value="ppp-static">PPP-Static</option>
             </select>
             <div class="tip" id="mode-tip">Mode <b>Static / Kinematic / DGPS</b> memerlukan file Base Station OBS dan Navigation.</div>
           </div>
@@ -1193,7 +1196,7 @@ async function uploadAllRovers() {
   updateProcessBtn();
 }
 
-async async function uploadOneRover(file, idx) {
+async function uploadOneRover(file, idx) {
   const CHUNK_SIZE  = 2 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const uploadId    = Math.random().toString(36).slice(2) + Date.now();
